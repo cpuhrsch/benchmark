@@ -7,19 +7,13 @@
 	    $< -o $@
 
 cudnn_%.exe: cudnn_%.cpp benchmark_common.h
-	LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CONDA_PREFIX}/lib:${PYTORCH_HOME}/torch/lib:${CUDNN_LIB_DIR}:${LD_LIBRARY_PATH} \
-	g++ -I${CUDA_HOME}/include -I${CONDA_PREFIX}/include \
+	LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CUDNN_LIB_DIR}:${LD_LIBRARY_PATH} \
+	g++ -I${CUDA_HOME}/include \
 	    -I${CUDNN_INCLUDE_DIR} \
-	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include \
-	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/TH \
-	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/THPP \
-	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/THNN \
-	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/ATen \
 	    -L${CUDA_HOME}/lib64 -L${CUDA_HOME}/lib64/stubs \
-	    -L${CUDNN_LIB_DIR} -L${CONDA_PREFIX}/lib \
+	    -L${CUDNN_LIB_DIR} \
 	    -lnvidia-ml -lcudart -lcudnn \
 	    -fopenmp \
-	    -Wl,${PYTORCH_HOME}/torch/lib/libATen.so.1 \
 	    -std=c++11 -O3 -g \
 	    $< -o $@
 
@@ -28,6 +22,7 @@ cudnn_%.exe: cudnn_%.cpp benchmark_common.h
 lstm_variable.exe: lstm_variable.cpp benchmark_common.h
 	LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CONDA_PREFIX}/lib:${PYTORCH_HOME}/torch/lib:${CUDNN_LIB_DIR}:${LD_LIBRARY_PATH} \
 	g++ -I${CUDA_HOME}/include \
+	    -I${CUDNN_INCLUDE_DIR} \
 	    -I${PYTORCH_HOME}/ \
 	    -I${PYTORCH_HOME}/torch/csrc \
 	    -I${PYTORCH_HOME}/torch/lib/pybind11/include \
@@ -37,10 +32,10 @@ lstm_variable.exe: lstm_variable.cpp benchmark_common.h
 	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/THNN \
 	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/ATen \
 	    -L${CUDA_HOME}/lib64 -L${CUDA_HOME}/lib64/stubs -L${CONDA_PREFIX}/lib \
-	    -lnvidia-ml -lcudart \
+	    -lnvidia-ml -lcudart -lcuda -lnvrtc \
 	    -fopenmp \
 	    -Wl,${PYTORCH_HOME}/torch/lib/libATen.so.1 \
-	    -Wl,${PYTORCH_HOME}/torch/_C.cpython-36m-x86_64-linux-gnu.so \
+	    -Wl,${PYTORCH_HOME}/torch/_C.so \
 	    -std=c++11 -O3 -g \
 	    $< -o $@
 
