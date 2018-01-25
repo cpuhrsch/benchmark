@@ -30,6 +30,8 @@ def perf_run(nume, size, data, mode='mean', sparse=False, cuda=False):
         start = time.time()
         output = embedding_sum(input, offsets)
         output.backward(grad_output)
+        if cuda:
+            torch.cuda.synchronize()
         embedding_sum.weight.grad.data.zero_()
         if (run_num > 100):
             total_time += time.time() - start
