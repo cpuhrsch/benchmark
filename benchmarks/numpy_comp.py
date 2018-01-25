@@ -6,6 +6,7 @@ import random
 import inspect
 import time
 import math
+import gc
 
 def find_common(array_pairs, no_arg=True):
     t = set(dir(torch.Tensor))
@@ -69,15 +70,17 @@ def bench(ops, shapes, no_arg=True, smin_=100, smax_=1000, count_=1000):
         np_time = 0.0
         tr_time = 0.0
         if no_arg:
+            datum = gen_datum(shape, min_size=smin, max_size=smax)
+            tdatum = torch.from_numpy(datum)
+            gc.collect()
+            start = time.time()
             for _ in range(count):
-                datum = gen_datum(shape, min_size=smin, max_size=smax)
-                tdatum = torch.from_numpy(datum)
-                start = time.time()
                 r1 = getattr(datum, op)()
-                np_time += time.time() - start
-                start = time.time()
+            np_time += time.time() - start
+            start = time.time()
+            for _ in range(count):
                 r2 = getattr(tdatum, op)()
-                tr_time += time.time() - start
+            tr_time += time.time() - start
         else:
             raise(ValueError("No implement"))
         op_times.append((dim, op, np_time, tr_time))
