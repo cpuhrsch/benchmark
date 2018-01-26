@@ -1,9 +1,26 @@
 %.exe: %.cpp benchmark_common.h
-	LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CONDA_PREFIX}/lib \
-	g++ -I${CUDA_HOME}/include -I${CONDA_PREFIX}/include \
-	    -L${CUDA_HOME}/lib64 -L${CUDA_HOME}/lib64/stubs -L${CONDA_PREFIX}/lib \
-	    -lnvidia-ml -lcudart -lATen \
-	    -std=c++11 -O3 -Wall -Wextra -pedantic -g \
+	LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CONDA_PREFIX}/lib:${PYTORCH_HOME}/torch/lib:${CUDNN_LIB_DIR}:${LD_LIBRARY_PATH} \
+	g++ -I${CUDA_HOME}/include \
+	    -I${CONDA_PREFIX}/include \
+	    -L${CUDA_HOME}/lib64 \
+	    -L${CUDA_HOME}/lib64/stubs \
+	    -L${CONDA_PREFIX}/lib \
+	    -L${PYTORCH_HOME}/torch/lib \
+	    -L${PYTORCH_HOME}/torch/_C.so \
+	    -L${PYTORCH_HOME}/torch/lib/libATen.so.1 \
+	    -L${CUDNN_LIB_DIR} \
+	    -I${CUDNN_INCLUDE_DIR} \
+	    -I${PYTORCH_HOME}/ \
+	    -I${PYTORCH_HOME}/torch/csrc \
+	    -I${PYTORCH_HOME}/torch/lib/pybind11/include \
+	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include \
+	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/TH \
+	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/THPP \
+	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/THNN \
+	    -I${PYTORCH_HOME}/torch/lib/tmp_install/include/ATen \
+	    -lnvidia-ml -lcudart -lATen -lcuda -lnvrtc \
+	    -fopenmp \
+	    -std=c++11 -O3 -Wall -Wextra -pedantic -g -march=native\
 	    $< -o $@
 
 cudnn_%.exe: cudnn_%.cpp benchmark_common.h
