@@ -17,18 +17,18 @@ int main() {
   int64_t count = 0;
   for (int64_t sample = 0; sample < sample_size; sample++) {
     float sum = 0;
-    // for (size_t i = 0; i < vector.size(); i += 2) {
+    for (size_t i = 0; i < vector.size(); i += 2) {
     // //   float slocal = vector[i] + vector[i + 1] + vector[i + 2] + vector[i + 3];
-    //   float slocal = vector[i] + vector[i + 1];
-    //   sum += slocal;
-    //   count += 2;
+       float slocal = vector[i] + vector[i + 1];
+       sum += slocal;
+       count += 2;
     // // //   // sum += vector[i];
     // // //   // sum += vector[i];
+     }
+    // for (size_t i = 0; i < vector.size(); i += 1) {
+    //   sum += vector[i];
+    //   count++;
     // }
-    for (size_t i = 0; i < vector.size(); i += 1) {
-      sum += vector[i];
-      count++;
-    }
     // std::cerr << "sum: " << sum << std::endl;
     sum /= size;
     for (size_t i = 0; i < vector.size(); i++) {
