@@ -6,9 +6,9 @@ import time
 if __name__ == "__main__":
     sample_size = 10000;
     size = 1000000;
-    # enable_numpy = False
+    enable_numpy = False
     enable_torch = True
-    enable_numpy = True
+    # enable_numpy = True
     # enable_torch = False
     v = np.random.rand(size)
     tv = torch.from_numpy(v).contiguous()
