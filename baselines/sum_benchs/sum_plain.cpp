@@ -1,4 +1,5 @@
 #include <time.h>
+#include <stdexcept>
 #include <vector>
 #include <cstdint>
 #include <iostream>
@@ -14,6 +15,13 @@
 #include "tbb/task_scheduler_init.h"
 #include "tbb/blocked_range.h"
 #include "tbb/tbb.h"
+#include <gflags/gflags.h>
+
+DEFINE_int64(size1, 1024, "size1 of matrix");
+DEFINE_int64(size2, 1024, "size2 of matrix");
+DEFINE_int64(counts, 50000, "number of executions");
+DEFINE_bool(show_baseline, false, "Include baseline benchmark");
+DEFINE_bool(debug, false, "Show Debug matrix");
 
 using namespace tbb;
 
@@ -57,25 +65,28 @@ void reducesum_impl11(const float *arr, float *outarr, size_t size1,
 
 constexpr size_t _VSIZE = 8; //8 floats - 256bits - one fetch has 1024 bits
 constexpr size_t _ROW = 8; //4; // chunk of columns per tile
-constexpr size_t _COL = 2; //4; // chunk of vector row per tile
+constexpr size_t _COL = 8; //4; // chunk of vector row per tile
 
-void reducesum_impl3_jeff(const float *arr, float *outarr, size_t size1b,
+void reducesum_impl3_tile(const float *arr, float *outarr, size_t size1b,
                           size_t size1e, size_t size2b, size_t size2e,
                           size_t size2) {
 
   for (size_t i = size1b; i < size1e; i += _ROW) {
     for (size_t j = size2b / _VSIZE; j < size2e / _VSIZE; j += _COL) {
+      __m256 tmp1[_COL];
       for (size_t j1 = 0; j1 < _COL; j1++) {
         __m256 tmp2[_ROW];
-        __m256 tmp1 = _mm256_loadu_ps(outarr + (j + j1) * _VSIZE);
+        tmp1[j1] = _mm256_load_ps(outarr + (j + j1) * _VSIZE);
         for (size_t i1 = 0; i1 < _ROW; i1++) {
           tmp2[i1] =
-              _mm256_loadu_ps(arr + (i + i1) * size2 + (j + j1) * _VSIZE);
+              _mm256_load_ps(arr + (i + i1) * size2 + (j + j1) * _VSIZE);
         }
         for (size_t i1 = 0; i1 < _ROW; i1++) {
-          tmp1 = _mm256_add_ps(tmp1, tmp2[i1]);
+          tmp1[j1] = _mm256_add_ps(tmp1[j1], tmp2[i1]);
         }
-        _mm256_storeu_ps(outarr + (j + j1) * _VSIZE, tmp1);
+      }
+      for (size_t j1 = 0; j1 < _COL; j1++) {
+        _mm256_store_ps(outarr + (j + j1) * _VSIZE, tmp1[j1]);
       }
     }
   }
@@ -384,16 +395,13 @@ float sum_impl_std(float* arr, size_t size) {
   return sum;
 }
 
-std::vector<float> make_vector(size_t size) {
+void make_vector(float* data, size_t size) {
   srand (1);
-  std::vector<float> v;
-  v.reserve(size);
   for (size_t i = 0; i < size; i++) {
-    v[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    v[i] = v[i] - 0.5;
-    v[i] = i;
+    data[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    data[i] = data[i] - 0.5;
+    data[i] = i;
   }
-  return v;
 }
 
 int main_sum_run(const float* data, int64_t size, int64_t counts, int64_t threads, size_t grain) {
@@ -416,17 +424,23 @@ int main_sum_run(const float* data, int64_t size, int64_t counts, int64_t thread
   return 0;
 }
 
+constexpr size_t _ALIGNMENT = 32;
+
 int main_reducesum_run(const float *data, size_t size1, size_t size2,
                        int64_t counts, int64_t threads, size_t grain) {
   tbb::tick_count mainBeginMark;
   std::cerr << "threads: " << threads;
   std::cerr << "\tgranularity: " << grain;
 
-  std::vector<float> result(size2);
-  float *outarr = result.data();
+  void *dat_ptr = NULL;
+  if (posix_memalign(&dat_ptr, _ALIGNMENT, size2 * sizeof(float)))
+    throw std::invalid_argument( "received negative value" );
+  // float* data_ = (float*) dat_ptr;
+  // std::vector<float> result(size2);
+  float *outarr = (float*) dat_ptr;
   mainBeginMark = tbb::tick_count::now();
   for (int64_t i = 0; i < counts; i++) {
-    reducesum_impl3_jeff(data, outarr, 0, size1, 0, size2, size2);
+    reducesum_impl3_tile(data, outarr, 0, size1, 0, size2, size2);
   }
   std::cout << "\ttime: " << (tbb::tick_count::now() - mainBeginMark).seconds()
             << "s";
@@ -435,55 +449,76 @@ int main_reducesum_run(const float *data, size_t size1, size_t size2,
 //  if (true) {
     std::cerr << std::endl;
     for (size_t j = 0; j < size2; j += 1) {
-      std::cerr << "j: " << j << " " << result[j] << std::endl;
+      std::cerr << "j: " << j << " " << outarr[j] << std::endl;
     }
     std::cerr << std::endl;
   }
+  free(dat_ptr);
 
-  std::vector<float> result2(size2);
-  float *outarr2 = result2.data();
-  mainBeginMark = tbb::tick_count::now();
-  for (int64_t i = 0; i < counts; i++) {
- //   reducesum_impl11(data, outarr2, size1, size2); // baseline
+  if (FLAGS_show_baseline) {
+
+    void *dat_ptr2 = NULL;
+    if (posix_memalign(&dat_ptr2, _ALIGNMENT, size2 * sizeof(float)))
+      throw std::invalid_argument("received negative value");
+    float *outarr2 = (float *)dat_ptr2;
+    mainBeginMark = tbb::tick_count::now();
+    for (int64_t i = 0; i < counts; i++) {
+          reducesum_impl11(data, outarr2, size1, size2); // baseline
+    }
+    std::cout << "\tbaseline time: "
+              << (tbb::tick_count::now() - mainBeginMark).seconds() << "s";
+    free(dat_ptr2);
   }
-  std::cout << "\tbaseline time: " << (tbb::tick_count::now() - mainBeginMark).seconds()
-            << "s" << std::endl;
 
+  std::cout << std::endl;
   return 0;
 }
 
-int main() {
+  int main(int argc, char *argv[]) {
+    gflags::SetUsageMessage("some usage message");
+      gflags::SetVersionString("1.0.0");
+        gflags::ParseCommandLineFlags(&argc, &argv, true);
   // size_t size = 1000000; -- 1d bench -- size_t counts = 20000;
-  size_t size1 = 1024;
-  size_t size2 = 1024;
-  size_t counts = 50000;
+  size_t size1 = (size_t)FLAGS_size1;
+  size_t size2 = (size_t)FLAGS_size2;
+  size_t counts = (size_t)FLAGS_counts;
   // size *= 100;
   // counts /= 100;
 //    counts = 1;
-//    size1 = 16;
-//    size2 = 16;
+//    size1 = 32;
+//    size2 = 32;
+    assert(size1 >= _ALIGNMENT);
+    assert(size2 >= _ALIGNMENT);
+    assert(size1 % _ALIGNMENT == 0);
+    assert(size2 % _ALIGNMENT == 0);
 //  counts = 20000;
  //  size1 = 8192;
  //  size2 = 8192;
 
   int max_threads = tbb::task_scheduler_init::default_num_threads();
-  auto v = make_vector(size1 * size2);
-  const float* data = v.data();
+//  float* data_;
+  void *dat_ptr = NULL;
+  if (posix_memalign(&dat_ptr, _ALIGNMENT, size1 * size2 * sizeof(float)))
+    throw std::invalid_argument( "received negative value" );
+  float* data_ = (float*) dat_ptr;
+  make_vector(data_, size1 * size2);
+  const float* data = (const float*) dat_ptr;
 
  if (false) {
 //  if (true) {
  for (size_t i = 0; i < size1; i++) {
    for (size_t j = 0; j < size2; j++) {
-     std::cerr << "\t" << data[i * size2 + j];
+     std::cerr << " " << data[i * size2 + j];
    }
    std::cerr << std::endl;
  }
   }
 
   std::cerr << "_VSIZE: " << _VSIZE << " _COL: " << _COL << " _ROW: " << _ROW
-            << std::endl;
+    << " size1: " << size1 << " size2: " << size2 << " counts: " << counts << " ";
+//            std::cerr << std::endl;
   for (int64_t threads = 1; threads < max_threads; threads *= 2) {
-    tbb::task_scheduler_init init(threads);
+    // tbb::task_scheduler_init automatic(threads); // - segfaults?
     for (size_t grain = 1; grain < size1; grain = grain * 2) {
     //for (size_t grain = 512; grain < size1 * size2; grain = grain * 2) {
       main_reducesum_run(data, size1, size2, counts, threads, grain);
@@ -492,5 +527,7 @@ int main() {
     }
     break;
   }
+    free(dat_ptr);
+        gflags::ShutDownCommandLineFlags();
 
 }
