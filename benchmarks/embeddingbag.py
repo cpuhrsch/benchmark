@@ -33,7 +33,7 @@ def perf_run(nume, size, data, mode='mean', sparse=False, cuda=False):
         if cuda:
             torch.cuda.synchronize()
         embedding_sum.weight.grad.data.zero_()
-        if (run_num > 100):
+        if (run_num > 1000):
             total_time += time.time() - start
         run_num += 1
     return total_time
@@ -57,7 +57,7 @@ def make_data(nume, size, num_input, num_offsets, max_offsets_size, runs):
 if __name__ == "__main__":
     random.seed(42)
     grid = [(10000, 100), (10000, 1000), (100000, 100), (100000, 1000)]
-    runs = 5000
+    runs = 10000
     num_input = 2000
     num_offsets = 200
     max_offsets_size = 30

@@ -263,6 +263,38 @@ float sum_impl21(const float *arr, size_t start, size_t end) {
   return sum;
 }
 
+float sum_impl21_fma(const float *arr, size_t start, size_t end) {
+  register size_t k;
+  float sarr[8];
+  __m256 part_sum, tmp_sum[4], tmp_sum1, tmp_sum2, tmp_sum3, a[8], useless;
+  part_sum = _mm256_set1_ps(0);
+  useless = _mm256_set1_ps(0);
+  k = start;
+  // std::cerr << "end k1: " << start << " end1: " << end << std::endl;
+  // std::cerr << "end k: " << k << " end: " << end  - 16<< std::endl;
+  assert(end % 64 == 0);
+  for (; k < end; k += 64) {
+    // std::cerr << "avx!" << std::endl;
+    for (size_t i = 0; i < 8; i++) {
+      a[i] = _mm256_loadu_ps(arr + k + i * 8);
+    }
+    // This tree reduction works better than adding each to part_sum
+    for (size_t i = 0; i < 8; i += 2) {
+      tmp_sum[i / 2] = _mm256_add_ps(a[i], a[i + 1]);
+    }
+    tmp_sum1 = _mm256_fmadd_ps(useless, tmp_sum[0], tmp_sum[1]);
+    tmp_sum2 = _mm256_fmadd_ps(useless, tmp_sum[2], tmp_sum[3]);
+    tmp_sum3 = _mm256_fmadd_ps(useless, tmp_sum1, tmp_sum2);
+    part_sum = _mm256_fmadd_ps(useless, part_sum, tmp_sum3);
+  }
+  _mm256_store_ps(sarr, part_sum);
+  float sum = sarr[0];
+  for (int i = 1; i < 8; i++) {
+    sum += sarr[i];
+  }
+  return sum;
+}
+
 float sum_impl2(float *arr, size_t start, size_t end) {
   assert(end % WIDTH == 0);
   assert(start % WIDTH == 0);
@@ -381,7 +413,9 @@ void make_vector(float *data, size_t size) {
   for (size_t i = 0; i < size; i++) {
     data[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
     data[i] = data[i] - 0.5;
-    data[i] = i;
+    if (FLAGS_debug) {
+      data[i] = i;
+    }
   }
 }
 
@@ -452,7 +486,7 @@ std::pair<tbb::tick_count, tbb::tick_count> reducesum_run(bool baseline, const f
     std::cerr << std::endl;
   }
   free(dat_ptr);
-  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, end);
+  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, end_t);
 }
 
 
