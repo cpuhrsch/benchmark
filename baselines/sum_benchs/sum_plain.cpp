@@ -385,35 +385,41 @@ void make_vector(float *data, size_t size) {
   }
 }
 
-int main_sum_run(const float *data, int64_t size, int64_t counts,
+void time_stats(std::pair<tbb::tick_count, tbb::tick_count> _time, double floats){
+  double s = (std::get<1>(_time) - std::get<0>(_time)).seconds();
+  std::cerr << "time:flops\033[36m" << std::fixed << std::setw(11) << s << "\033[0m" << ":" << "\033[31m";
+  std::cerr << std::scientific << (double)floats / s << "\033[0m";
+}
+
+std::pair<tbb::tick_count, tbb::tick_count> sum_run(bool baseline, const float *data, int64_t size, int64_t counts,
                  int64_t threads, size_t grain) {
-  float all_sum = 0;
   (void)threads;
   (void)grain;
   tbb::tick_count mainBeginMark = tbb::tick_count::now();
-  all_sum = 0;
+  float all_sum = 0;
   for (int64_t i = 0; i < counts; i++) {
-    // std::cerr << "i: " << i << std::endl;
-    // all_sum += sum_impl_tbb(data, size, grain);//0);
-    // all_sum += sum_impl(data, size);//, grain);//0);
-    all_sum += sum_impl21(data, 0, size);
-  }
-  std::cout << " sum_time: "
-            << std::setw(9) << (tbb::tick_count::now() - mainBeginMark).seconds() << "s";
-  std::cerr << " sum: " << all_sum;
-
-  if (FLAGS_show_baseline) {
-    float all_sum2 = 0;
-    tbb::tick_count mainBeginMark = tbb::tick_count::now();
-    for (int64_t i = 0; i < counts; i++) {
-      all_sum2 += sum_impl_naive(data, 0, size);
+    if (baseline) {
+      all_sum += sum_impl_naive(data, 0, size);
+    } else {
+      all_sum += sum_impl21(data, 0, size);
     }
-    std::cout << " sum_baseline_time: "
-              << std::setw(9) << (tbb::tick_count::now() - mainBeginMark).seconds() << "s";
-    std::cerr << " sum_baseline: " << all_sum2;
-  if (FLAGS_debug) {
-    assert(all_sum == all_sum2);
   }
+  if (FLAGS_debug) {
+    if (baseline) {
+      std::cerr << " baseline_";
+    }
+    std::cerr << "sum: " << all_sum;
+  }
+  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, tbb::tick_count::now());
+}
+
+int main_sum_run(const float *data, int64_t size, int64_t counts,
+                 int64_t threads, size_t grain) {
+  std::cerr << " sum: ";
+  time_stats(sum_run(false, data, size, counts, threads, grain), size*counts);
+  if (FLAGS_show_baseline) {
+    std::cerr << " - ";
+    time_stats(sum_run(true, data, size, counts, threads, grain), size*counts);
   }
   return 0;
 }
@@ -429,8 +435,7 @@ std::pair<tbb::tick_count, tbb::tick_count> reducesum_run(bool baseline, const f
     throw std::invalid_argument("received negative value");
   float *outarr = (float *)dat_ptr;
   memset(outarr, 0, size2 * sizeof(float));
-  tbb::tick_count mainBeginMark;
-  mainBeginMark = tbb::tick_count::now();
+  tbb::tick_count mainBeginMark = tbb::tick_count::now();
   for (int64_t i = 0; i < counts; i++) {
     if (baseline) {
       reducesum_impl_naive(data, outarr, 0, size1, 0, size2, size2);
@@ -438,6 +443,7 @@ std::pair<tbb::tick_count, tbb::tick_count> reducesum_run(bool baseline, const f
       reducesum_impl3(data, outarr, 0, size1, 0, size2, size2);
     }
   }
+  tbb::tick_count end_t = tbb::tick_count::now();
   if (FLAGS_debug) {
     std::cerr << std::endl;
     for (size_t j = 0; j < size2; j += 1) {
@@ -446,18 +452,17 @@ std::pair<tbb::tick_count, tbb::tick_count> reducesum_run(bool baseline, const f
     std::cerr << std::endl;
   }
   free(dat_ptr);
-  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, tbb::tick_count::now());
+  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, end);
 }
+
 
 int main_reducesum_run(const float *data, size_t size1, size_t size2,
                        int64_t counts, int64_t threads, size_t grain) {
-  std::cout << " reduce_time: " << std::setw(9);
-  auto _time = reducesum_run(false, data, size1, size2, counts, threads, grain);
-  std::cerr << (std::get<1>(_time) - std::get<0>(_time)).seconds();
+  std::cerr << " reduce_time: ";
+  time_stats(reducesum_run(false, data, size1, size2, counts, threads, grain), size1*size2*counts);
   if (FLAGS_show_baseline) {
-    std::cout << " reduce_baseline_time: " << std::setw(9);
-    auto _time = reducesum_run(true, data, size1, size2, counts, threads, grain);
-    std::cerr << (std::get<1>(_time) - std::get<0>(_time)).seconds();
+    std::cerr << " - ";
+    time_stats(reducesum_run(true, data, size1, size2, counts, threads, grain), size1*size2*counts);
   }
   return 0;
 }
@@ -499,11 +504,11 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  std::cerr << "size1: " << std::setw(9) << size1  << " "
-            << "size2: " << std::setw(9) << size2 << " "
-            << "counts: " << std::setw(9) << counts << " ";
-  std::cerr << "threads: " << std::setw(9) << FLAGS_t;
-  std::cerr << " granularity: " << std::setw(9) << FLAGS_grain;
+  std::cerr << "size1: " << std::setw(8) << size1  << " "
+            << "size2: " << std::setw(8) << size2 << " "
+            << "counts: " << std::setw(8) << counts << " ";
+  std::cerr << "threads: " << std::setw(8) << FLAGS_t;
+  std::cerr << " granularity: " << std::setw(8) << FLAGS_grain;
   std::cerr << "\t";
   tbb::task_scheduler_init automatic(FLAGS_t);
   if (FLAGS_run_reducesum) {
