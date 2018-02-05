@@ -22,13 +22,80 @@ DEFINE_int64(size1, 1024, "size1 of matrix");
 DEFINE_int64(size2, 1024, "size2 of matrix");
 DEFINE_int64(t, 1, "number of threads");
 DEFINE_int64(grain, 1, "granularity");
-DEFINE_int64(counts, 50000, "number of executions");
 DEFINE_bool(show_baseline, false, "Include baseline benchmark");
 DEFINE_bool(debug, false, "Show Debug matrix");
 DEFINE_bool(run_sum, false, "run_sum");
 DEFINE_bool(run_reducesum, false, "run_reducesum");
 
 using namespace tbb;
+
+#define USEC    1000000
+#define NSEC    1000000000
+
+/**
+ * us_to_timespec - converts microseconds to a timespec
+ * @us: number of microseconds
+ * @t: the storage timespec
+ */
+static inline void us_to_timespec(uint64_t us, struct timespec *t)
+{
+    t->tv_sec = us / USEC;
+    t->tv_nsec = (us - t->tv_sec * USEC) * (NSEC / USEC);
+}
+
+/**
+ * timespec_to_us - converts a timespec to microseconds
+ * @t: the timespec
+ *
+ * Returns microseconds.
+ */
+static inline uint64_t timespec_to_us(struct timespec *t)
+{
+    return t->tv_sec * USEC + t->tv_nsec / (NSEC / USEC);
+}
+
+/**
+ * timespec_to_ns - converts a timespec to nanoseconds
+ * @t: the timespec
+ *
+ * Returns nanoseconds.
+ */
+static inline uint64_t timespec_to_ns(struct timespec *t)
+{
+    return t->tv_sec * NSEC + t->tv_nsec;
+}
+
+/**
+ * timespec_subtract - subtracts timespec y from timespec x
+ * @x, @y: the timespecs to subtract
+ * @result: a pointer to store the answer
+ *
+ * WARNING: It's not safe for @result to be @x or @y.
+ *
+ * Returns 1 if the difference is negative, otherwise 0.
+ */
+int timespec_subtract(struct timespec *x, struct timespec *y,
+                 struct timespec *result)
+{
+    if (x->tv_nsec < y->tv_nsec) {
+        int secs = (y->tv_nsec - x->tv_nsec) / NSEC + 1;
+        y->tv_nsec -= NSEC * secs;
+        y->tv_sec += secs;
+    }
+
+        if (x->tv_nsec - y->tv_nsec > NSEC) {
+                int secs = (x->tv_nsec - y->tv_nsec) / NSEC;
+                y->tv_nsec += NSEC * secs;
+                y->tv_sec -= secs;
+    }
+
+    result->tv_sec = x->tv_sec - y->tv_sec;
+    result->tv_nsec = x->tv_nsec - y->tv_nsec;
+
+    return x->tv_sec < y->tv_sec;
+}
+
+constexpr size_t _ALIGNMENT = 32;
 
 constexpr size_t WIDTH = 16;
 
@@ -408,46 +475,114 @@ float sum_impl_std(float *arr, size_t size) {
   return sum;
 }
 
-void make_vector(float *data, size_t size) {
-  srand(1);
-  for (size_t i = 0; i < size; i++) {
-    data[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    data[i] = data[i] - 0.5;
-    if (FLAGS_debug) {
-      data[i] = i;
+constexpr size_t _SEED = 1;
+
+static inline uint16_t __mm_crc32_u64(uint64_t crc, uint64_t val)
+{
+    asm("crc32q %1, %0" : "+r" (crc) : "rm" (val));
+    return crc;
+}
+
+unsigned int sfrand(unsigned int x)
+{
+    unsigned int seed = x * 16807;
+    return ( (seed)>>9 ) | 0x40000000;
+}
+
+static inline size_t hash(size_t x) {
+  size_t h = 2166136261;
+  h = h ^ x;
+  h = h * 16777619;
+  return h;
+}
+
+std::vector<size_t> rand_perm(size_t max) {
+  std::vector<size_t> perm;
+  perm.reserve(max);
+  for (size_t i = 0; i < max; i++) {
+    size_t randi = rand() % max;
+    while(std::find(perm.begin(), perm.end(), randi) != perm.end()) {
+      randi = rand() % max;
     }
+    perm.push_back(randi);
   }
+  return perm;
 }
 
-void time_stats(std::pair<tbb::tick_count, tbb::tick_count> _time, double floats){
-  double s = (std::get<1>(_time) - std::get<0>(_time)).seconds();
-  std::cerr << "time:flops\033[36m" << std::fixed << std::setw(11) << s << "\033[0m" << ":" << "\033[31m";
-  std::cerr << std::scientific << (double)floats / s << "\033[0m";
+//TODO: Random indexing into data
+//TODO: use clock monotonic - make sure it's mapping to a good function
+
+constexpr size_t _HASHES_SIZE = 1024;
+
+void make_vector(float *data_, size_t size) {
+  srand(1);
+  std::vector<size_t> hashes(_HASHES_SIZE);
+  size_t start = rand();
+  for (size_t c = 0; c < _HASHES_SIZE; c++) {
+    hashes[c] = hash(start + c);
+  }
+  //  parallel_for(blocked_range<size_t>(0, size, 10000000),
+  //               [&](const blocked_range<size_t> &r) {
+  for (size_t c = 0; c < size; c++) {
+    start = (start + hashes[c % _HASHES_SIZE]) % RAND_MAX;
+    data_[c] = ((float)(start) / (float)(RAND_MAX)) - 0.5f;
+    //                   data_[c] = c;
+  }
+  //               });
 }
 
-std::pair<tbb::tick_count, tbb::tick_count> sum_run(bool baseline, const float *data, int64_t size, int64_t counts,
-                 int64_t threads, size_t grain) {
+void time_stats(uint64_t s, double floats){
+  std::cerr << "ns:\033[36m" << std::fixed << std::setw(11) << s << "\033[0m"
+            << " ops/ns: "
+            << "\033[31m";
+  std::cerr << (double)floats / (double)s << "\033[0m";
+  std::cerr << " s: " << s / (double)NSEC;
+}
+
+uint64_t sum_run(bool baseline, const float * &data, int64_t size,
+        size_t counts, int64_t threads, size_t grain) {
   (void)threads;
   (void)grain;
-  tbb::tick_count mainBeginMark = tbb::tick_count::now();
+  int ret;
   float all_sum = 0;
-  for (int64_t i = 0; i < counts; i++) {
-    if (baseline) {
-      all_sum += sum_impl_naive(data, 0, size);
-    } else {
-      all_sum += sum_impl21(data, 0, size);
+  struct timespec start, finish, delta;
+  uint64_t delta_ns = 0;
+  auto perm = rand_perm(counts);
+  for (size_t i_ = 0; i_ < counts; i_++) {
+    size_t i = perm[i_];
+    const float *datum = data + i * size;
+    ret = clock_gettime(CLOCK_MONOTONIC, &start);
+    if (ret == -1) {
+      perror("clock_gettime()");
+      exit(1);
     }
+    if (baseline) {
+      all_sum += sum_impl_naive(datum, 0, size);
+    } else {
+      all_sum += sum_impl21(datum, 0, size);
+    }
+    ret = clock_gettime(CLOCK_MONOTONIC, &finish);
+    if (ret == -1) {
+      perror("clock_gettime()");
+      exit(1);
+    }
+    if (timespec_subtract(&finish, &start, &delta)) {
+        fprintf(stderr, "clock not monotonic???\n");
+        // ezyang: Exit here?
+    }
+    delta_ns += timespec_to_ns(&delta);
   }
+
   if (FLAGS_debug) {
     if (baseline) {
       std::cerr << " baseline_";
     }
     std::cerr << "sum: " << all_sum;
   }
-  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, tbb::tick_count::now());
+  return delta_ns;
 }
 
-int main_sum_run(const float *data, int64_t size, int64_t counts,
+int main_sum_run(const float *data, int64_t size, size_t counts,
                  int64_t threads, size_t grain) {
   std::cerr << " sum: ";
   time_stats(sum_run(false, data, size, counts, threads, grain), size*counts);
@@ -458,26 +593,46 @@ int main_sum_run(const float *data, int64_t size, int64_t counts,
   return 0;
 }
 
-constexpr size_t _ALIGNMENT = 32;
-
-std::pair<tbb::tick_count, tbb::tick_count> reducesum_run(bool baseline, const float *data, size_t size1, size_t size2,
-                       int64_t counts, int64_t threads, size_t grain) {
+uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
+                     size_t size2, size_t counts, int64_t threads,
+                     size_t grain) {
   (void)threads;
   (void)grain;
+  int ret;
   void *dat_ptr = NULL;
   if (posix_memalign(&dat_ptr, _ALIGNMENT, size2 * sizeof(float)))
     throw std::invalid_argument("received negative value");
   float *outarr = (float *)dat_ptr;
   memset(outarr, 0, size2 * sizeof(float));
-  tbb::tick_count mainBeginMark = tbb::tick_count::now();
-  for (int64_t i = 0; i < counts; i++) {
-    if (baseline) {
-      reducesum_impl_naive(data, outarr, 0, size1, 0, size2, size2);
-    } else {
-      reducesum_impl3(data, outarr, 0, size1, 0, size2, size2);
+  auto perm = rand_perm(counts);
+
+  struct timespec start, finish, delta;
+  uint64_t delta_ns = 0;
+  for (size_t i_ = 0; i_ < counts; i_++) {
+    size_t i = perm[i_];
+    const float *datum = data + i * size1 * size2;
+    ret = clock_gettime(CLOCK_MONOTONIC, &start);
+    if (ret == -1) {
+      perror("clock_gettime()");
+      exit(1);
     }
+    if (baseline) {
+      reducesum_impl_naive(datum, outarr, 0, size1, 0, size2, size2);
+    } else {
+      reducesum_impl3(datum, outarr, 0, size1, 0, size2, size2);
+    }
+    ret = clock_gettime(CLOCK_MONOTONIC, &finish);
+    if (ret == -1) {
+      perror("clock_gettime()");
+      exit(1);
+    }
+    if (timespec_subtract(&finish, &start, &delta)) {
+        fprintf(stderr, "clock not monotonic???\n");
+        // ezyang: Exit here?
+    }
+    delta_ns += timespec_to_ns(&delta);
   }
-  tbb::tick_count end_t = tbb::tick_count::now();
+
   if (FLAGS_debug) {
     std::cerr << std::endl;
     for (size_t j = 0; j < size2; j += 1) {
@@ -486,12 +641,11 @@ std::pair<tbb::tick_count, tbb::tick_count> reducesum_run(bool baseline, const f
     std::cerr << std::endl;
   }
   free(dat_ptr);
-  return std::pair<tbb::tick_count, tbb::tick_count>(mainBeginMark, end_t);
+  return delta_ns;
 }
 
-
 int main_reducesum_run(const float *data, size_t size1, size_t size2,
-                       int64_t counts, int64_t threads, size_t grain) {
+                       size_t counts, int64_t threads, size_t grain) {
   std::cerr << " reduce_time: ";
   time_stats(reducesum_run(false, data, size1, size2, counts, threads, grain), size1*size2*counts);
   if (FLAGS_show_baseline) {
@@ -501,6 +655,7 @@ int main_reducesum_run(const float *data, size_t size1, size_t size2,
   return 0;
 }
 
+
 // size_t size = 1000000; -- 1d bench -- size_t counts = 20000;
 int main(int argc, char *argv[]) {
   gflags::SetUsageMessage("some usage message");
@@ -508,7 +663,8 @@ int main(int argc, char *argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   size_t size1 = (size_t)FLAGS_size1;
   size_t size2 = (size_t)FLAGS_size2;
-  size_t counts = (size_t)FLAGS_counts;
+  size_t counts = ((size_t)16 * (size_t)268435456) / (size1 * size2); // 16GiB of data
+
   if (FLAGS_debug) {
     counts = 1;
     size1 = 32;
@@ -519,20 +675,21 @@ int main(int argc, char *argv[]) {
   assert(size1 % _ALIGNMENT == 0);
   assert(size2 % _ALIGNMENT == 0);
 
+  void *dat_ptr = NULL;
+  if (posix_memalign(&dat_ptr, _ALIGNMENT,
+                     counts * size1 * size2 * sizeof(float)))
+    throw std::invalid_argument("received negative value");
+  float *data_ = (float *)dat_ptr;
+
   int max_threads = tbb::task_scheduler_init::default_num_threads();
   assert(FLAGS_t <= max_threads);
   //  float* data_;
-  void *dat_ptr = NULL;
-  if (posix_memalign(&dat_ptr, _ALIGNMENT, size1 * size2 * sizeof(float)))
-    throw std::invalid_argument("received negative value");
-  float *data_ = (float *)dat_ptr;
-  make_vector(data_, size1 * size2);
-  const float *data = (const float *)dat_ptr;
+  make_vector(data_, size1 * size2 * counts);
 
   if (FLAGS_debug) {
     for (size_t i = 0; i < size1; i++) {
       for (size_t j = 0; j < size2; j++) {
-        std::cerr << " " << data[i * size2 + j];
+        std::cerr << " " << data_[i * size2 + j];
       }
       std::cerr << std::endl;
     }
@@ -546,10 +703,10 @@ int main(int argc, char *argv[]) {
   std::cerr << "\t";
   tbb::task_scheduler_init automatic(FLAGS_t);
   if (FLAGS_run_reducesum) {
-    main_reducesum_run(data, size1, size2, counts, FLAGS_t, FLAGS_grain);
+    main_reducesum_run(data_, size1, size2, counts, FLAGS_t, FLAGS_grain);
   }
   if (FLAGS_run_sum) {
-    main_sum_run(data, size1 * size2, counts, FLAGS_t, FLAGS_grain);
+    main_sum_run(data_, size1 * size2, counts, FLAGS_t, FLAGS_grain);
   }
   std::cerr << std::endl;
   free(dat_ptr);

@@ -1,10 +1,10 @@
-./a.out -size1 64 -size2 64 -counts 10240000  -run_sum # -show_baseline
-./a.out -size1 128 -size2 128 -counts 2560000 -run_sum # -show_baseline
-./a.out -size1 256 -size2 256 -counts 640000  -run_sum # -show_baseline
-./a.out -size1 128 -size2 512 -counts 640000  -run_sum # -show_baseline
-./a.out -size1 512 -size2 128 -counts 640000  -run_sum # -show_baseline
-./a.out -size1 1024 -size2 1024 -counts 40000 -run_sum # -show_baseline
-./a.out -size1 2048 -size2 2048 -counts 10000 -run_sum # -show_baseline
-./a.out -size1 4096 -size2 4096 -counts 2500  -run_sum # -show_baseline
-./a.out -size1 512 -size2 4096 -counts 20000  -run_sum # -show_baseline
-./a.out -size1 4096 -size2 512 -counts 20000  -run_sum # -show_baseline
+./a.out -size1 64 -size2 64     -run_sum # -show_baseline
+./a.out -size1 128 -size2 128   -run_sum # -show_baseline
+./a.out -size1 256 -size2 256   -run_sum # -show_baseline
+./a.out -size1 128 -size2 512   -run_sum # -show_baseline
+./a.out -size1 512 -size2 128   -run_sum # -show_baseline
+./a.out -size1 1024 -size2 1024 -run_sum # -show_baseline
+./a.out -size1 2048 -size2 2048 -run_sum # -show_baseline
+./a.out -size1 4096 -size2 4096 -run_sum # -show_baseline
+./a.out -size1 512 -size2 4096  -run_sum # -show_baseline
+./a.out -size1 4096 -size2 512  -run_sum # -show_baseline
