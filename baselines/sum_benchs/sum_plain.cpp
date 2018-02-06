@@ -9,38 +9,40 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <gflags/gflags.h>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <numeric>
 #include <stdexcept>
 #include <time.h>
 #include <vector>
-#include <iomanip>
 
 DEFINE_int64(size1, 1024, "size1 of matrix");
 DEFINE_int64(size2, 1024, "size2 of matrix");
+DEFINE_int64(epoch, 1, "number of repeated runs");
 DEFINE_int64(t, 1, "number of threads");
 DEFINE_int64(grain, 1, "granularity");
 DEFINE_bool(show_baseline, false, "Include baseline benchmark");
 DEFINE_bool(debug, false, "Show Debug matrix");
 DEFINE_bool(run_sum, false, "run_sum");
 DEFINE_bool(run_reducesum, false, "run_reducesum");
+DEFINE_string(inpath, "/tmp/out.data", "Path of input data");
 
 using namespace tbb;
 
-#define USEC    1000000
-#define NSEC    1000000000
+#define USEC 1000000
+#define NSEC 1000000000
 
 /**
  * us_to_timespec - converts microseconds to a timespec
  * @us: number of microseconds
  * @t: the storage timespec
  */
-static inline void us_to_timespec(uint64_t us, struct timespec *t)
-{
-    t->tv_sec = us / USEC;
-    t->tv_nsec = (us - t->tv_sec * USEC) * (NSEC / USEC);
+static inline void us_to_timespec(uint64_t us, struct timespec *t) {
+  t->tv_sec = us / USEC;
+  t->tv_nsec = (us - t->tv_sec * USEC) * (NSEC / USEC);
 }
 
 /**
@@ -49,9 +51,8 @@ static inline void us_to_timespec(uint64_t us, struct timespec *t)
  *
  * Returns microseconds.
  */
-static inline uint64_t timespec_to_us(struct timespec *t)
-{
-    return t->tv_sec * USEC + t->tv_nsec / (NSEC / USEC);
+static inline uint64_t timespec_to_us(struct timespec *t) {
+  return t->tv_sec * USEC + t->tv_nsec / (NSEC / USEC);
 }
 
 /**
@@ -60,9 +61,8 @@ static inline uint64_t timespec_to_us(struct timespec *t)
  *
  * Returns nanoseconds.
  */
-static inline uint64_t timespec_to_ns(struct timespec *t)
-{
-    return t->tv_sec * NSEC + t->tv_nsec;
+static inline uint64_t timespec_to_ns(struct timespec *t) {
+  return t->tv_sec * NSEC + t->tv_nsec;
 }
 
 /**
@@ -75,24 +75,23 @@ static inline uint64_t timespec_to_ns(struct timespec *t)
  * Returns 1 if the difference is negative, otherwise 0.
  */
 int timespec_subtract(struct timespec *x, struct timespec *y,
-                 struct timespec *result)
-{
-    if (x->tv_nsec < y->tv_nsec) {
-        int secs = (y->tv_nsec - x->tv_nsec) / NSEC + 1;
-        y->tv_nsec -= NSEC * secs;
-        y->tv_sec += secs;
-    }
+                      struct timespec *result) {
+  if (x->tv_nsec < y->tv_nsec) {
+    int secs = (y->tv_nsec - x->tv_nsec) / NSEC + 1;
+    y->tv_nsec -= NSEC * secs;
+    y->tv_sec += secs;
+  }
 
-        if (x->tv_nsec - y->tv_nsec > NSEC) {
-                int secs = (x->tv_nsec - y->tv_nsec) / NSEC;
-                y->tv_nsec += NSEC * secs;
-                y->tv_sec -= secs;
-    }
+  if (x->tv_nsec - y->tv_nsec > NSEC) {
+    int secs = (x->tv_nsec - y->tv_nsec) / NSEC;
+    y->tv_nsec += NSEC * secs;
+    y->tv_sec -= secs;
+  }
 
-    result->tv_sec = x->tv_sec - y->tv_sec;
-    result->tv_nsec = x->tv_nsec - y->tv_nsec;
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_nsec = x->tv_nsec - y->tv_nsec;
 
-    return x->tv_sec < y->tv_sec;
+  return x->tv_sec < y->tv_sec;
 }
 
 constexpr size_t _ALIGNMENT = 32;
@@ -112,8 +111,8 @@ void reducesum_impl2(const float *arr, float *outarr, size_t size1,
 }
 
 void reducesum_impl_naive(const float *arr, float *outarr, size_t size1b,
-                       size_t size1e, size_t size2b, size_t size2e,
-                       size_t size2) {
+                          size_t size1e, size_t size2b, size_t size2e,
+                          size_t size2) {
   for (size_t i = size1b; i < size1e; i += 1) {
     for (size_t j = size2b; j < size2e; j += 1) {
       outarr[j] += arr[i * size2 + j];
@@ -161,25 +160,43 @@ void reducesum_impl3_tile(const float *arr, float *outarr, size_t size1b,
   }
 }
 
+void reducesum_impl33(const float *arr, float *outarr, size_t size1b,
+                     size_t size1e, size_t size2b, size_t size2e,
+                     size_t size2) {
+  register size_t k;
+  k = size2b;
+  size_t end = size2e > 7 ? size2e - 8 : 0;
+  for (; k < end; k += 8) {
+    __m256 a;
+    __m256 b;
+    b = _mm256_loadu_ps(outarr + k);
+    for (size_t i = size1b; i < size1e; i += 1) {
+      a = _mm256_loadu_ps(arr + i * size2 + k);
+      b = _mm256_add_ps(a, b);
+    }
+    _mm256_storeu_ps(outarr + k, b);
+  }
+}
+
 void reducesum_impl3(const float *arr, float *outarr, size_t size1b,
                      size_t size1e, size_t size2b, size_t size2e,
                      size_t size2) {
   register size_t k;
   k = size2b;
   size_t end = size2e > 7 ? size2e - 8 : 0;
-  for (; k < end; k += 8 * 8) {
-    __m256 a[4];
-    __m256 b[4];
-    for (int ib = 0; ib < 4; ib++) {
+  for (; k < end; k += 64) {
+    __m256 a[8];
+    __m256 b[8];
+    for (int ib = 0; ib < 8; ib++) {
       b[ib] = _mm256_loadu_ps(outarr + k + ib * 8);
     }
     for (size_t i = size1b; i < size1e; i += 1) {
-      for (int ib = 0; ib < 4; ib++) {
+      for (int ib = 0; ib < 8; ib++) {
         a[ib] = _mm256_loadu_ps(arr + i * size2 + k + ib * 8);
         b[ib] = _mm256_add_ps(a[ib], b[ib]);
       }
     }
-    for (int ib = 0; ib < 4; ib++) {
+    for (int ib = 0; ib < 8; ib++) {
       _mm256_storeu_ps(outarr + k + ib * 8, b[ib]);
     }
   }
@@ -299,6 +316,21 @@ float sum_impl3(float *arr, size_t size) {
 // TODO: Play with TBB to have repeated runs give same results - same order for
 // merges no matter the num of threads
 
+// TODO: Use cacheflush!
+
+// XXX: Clean up the code! Write more tests!
+
+// TODO: Detailed understanding of highest throughput
+// TODO: cycles per nanosecond
+
+// TODO: look at avx switching cost
+
+// TODO: L1, L2 has same throughput
+
+// TODO: Optimize for applying the same operation to the same memory many many times
+
+// TODO: threads parallization: preserve determinism accross runs
+
 float sum_impl21(const float *arr, size_t start, size_t end) {
   register size_t k;
   float sarr[8];
@@ -395,12 +427,11 @@ public:
     float *sum = my_sum.data();
     size_t size2 = my_size2;
     reducesum_impl_naive(a, sum, r.rows().begin(), r.rows().end(),
-                      r.cols().begin(), r.cols().end(), size2);
+                         r.cols().begin(), r.cols().end(), size2);
   }
 
   ReduceSumFoo(ReduceSumFoo &x, split)
-      : my_a(x.my_a), my_size2(x.my_size2), my_sum(x.my_sum) {
-  }
+      : my_a(x.my_a), my_size2(x.my_size2), my_sum(x.my_sum) {}
 
   void join(const ReduceSumFoo &y) {
     float *sum1 = my_sum.data();
@@ -477,16 +508,14 @@ float sum_impl_std(float *arr, size_t size) {
 
 constexpr size_t _SEED = 1;
 
-static inline uint16_t __mm_crc32_u64(uint64_t crc, uint64_t val)
-{
-    asm("crc32q %1, %0" : "+r" (crc) : "rm" (val));
-    return crc;
+static inline uint16_t __mm_crc32_u64(uint64_t crc, uint64_t val) {
+  asm("crc32q %1, %0" : "+r"(crc) : "rm"(val));
+  return crc;
 }
 
-unsigned int sfrand(unsigned int x)
-{
-    unsigned int seed = x * 16807;
-    return ( (seed)>>9 ) | 0x40000000;
+unsigned int sfrand(unsigned int x) {
+  unsigned int seed = x * 16807;
+  return ((seed) >> 9) | 0x40000000;
 }
 
 static inline size_t hash(size_t x) {
@@ -497,50 +526,47 @@ static inline size_t hash(size_t x) {
 }
 
 std::vector<size_t> rand_perm(size_t max) {
-  std::vector<size_t> perm;
-  perm.reserve(max);
-  for (size_t i = 0; i < max; i++) {
-    size_t randi = rand() % max;
-    while(std::find(perm.begin(), perm.end(), randi) != perm.end()) {
-      randi = rand() % max;
-    }
-    perm.push_back(randi);
-  }
+  std::vector<size_t> perm(max);
+  std::iota(perm.begin(), perm.end(), 0);
+  std::random_shuffle(perm.begin(), perm.end());
   return perm;
 }
 
-//TODO: Random indexing into data
-//TODO: use clock monotonic - make sure it's mapping to a good function
+// TODO: Random indexing into data
+// TODO: use clock monotonic - make sure it's mapping to a good function
 
 constexpr size_t _HASHES_SIZE = 1024;
 
 void make_vector(float *data_, size_t size) {
-  srand(1);
-  std::vector<size_t> hashes(_HASHES_SIZE);
-  size_t start = rand();
-  for (size_t c = 0; c < _HASHES_SIZE; c++) {
-    hashes[c] = hash(start + c);
+  // std::ifstream ifs(FLAGS_inpath, std::ifstream::binary);
+  for (size_t i = 0; i < size; i++) {
+    // float num;
+    // ifs.read((char *)&num, sizeof(float));
+    // data_[i] = num;
+    data_[i] = (float)(i % 1024);
   }
-  //  parallel_for(blocked_range<size_t>(0, size, 10000000),
-  //               [&](const blocked_range<size_t> &r) {
-  for (size_t c = 0; c < size; c++) {
-    start = (start + hashes[c % _HASHES_SIZE]) % RAND_MAX;
-    data_[c] = ((float)(start) / (float)(RAND_MAX)) - 0.5f;
-    //                   data_[c] = c;
-  }
-  //               });
+  // ifs.close();
+  // srand(1);
+  // assert(size % _HASHES_SIZE == 0);
+  // for (size_t c = 0; c < size; c += _HASHES_SIZE) {
+  //   size_t start = rand();
+  //   for (size_t ci = 0; ci < _HASHES_SIZE; ci++) {
+  //     data_[c + ci] = (float)((start * ci) % (RAND_MAX)) / (float)RAND_MAX
+  //     -0.5f;
+  //   }
+  // }
 }
 
-void time_stats(uint64_t s, double floats){
-  std::cerr << "ns:\033[36m" << std::fixed << std::setw(11) << s << "\033[0m"
+void time_stats(uint64_t s, double floats) {
+  std::cerr << " ns:\033[36m" << std::fixed << std::setw(11) << s << "\033[0m"
             << " ops/ns: "
             << "\033[31m";
   std::cerr << (double)floats / (double)s << "\033[0m";
   std::cerr << " s: " << s / (double)NSEC;
 }
 
-uint64_t sum_run(bool baseline, const float * &data, int64_t size,
-        size_t counts, int64_t threads, size_t grain) {
+uint64_t sum_run(bool baseline, const float *&data, int64_t size, size_t counts,
+                 int64_t threads, size_t grain) {
   (void)threads;
   (void)grain;
   int ret;
@@ -548,30 +574,33 @@ uint64_t sum_run(bool baseline, const float * &data, int64_t size,
   struct timespec start, finish, delta;
   uint64_t delta_ns = 0;
   auto perm = rand_perm(counts);
-  for (size_t i_ = 0; i_ < counts; i_++) {
-    size_t i = perm[i_];
-    const float *datum = data + i * size;
-    ret = clock_gettime(CLOCK_MONOTONIC, &start);
-    if (ret == -1) {
-      perror("clock_gettime()");
-      exit(1);
-    }
-    if (baseline) {
-      all_sum += sum_impl_naive(datum, 0, size);
-    } else {
-      all_sum += sum_impl21(datum, 0, size);
-    }
-    ret = clock_gettime(CLOCK_MONOTONIC, &finish);
-    if (ret == -1) {
-      perror("clock_gettime()");
-      exit(1);
-    }
-    if (timespec_subtract(&finish, &start, &delta)) {
-        fprintf(stderr, "clock not monotonic???\n");
-        // ezyang: Exit here?
-    }
-    delta_ns += timespec_to_ns(&delta);
+  ret = clock_gettime(CLOCK_MONOTONIC, &start);
+  if (ret == -1) {
+    perror("clock_gettime()");
+    exit(1);
   }
+  std::random_shuffle(perm.begin(), perm.end());
+  for (size_t i_ = 0; i_ < counts; i_++) {
+    for (size_t epoch = 0; epoch < FLAGS_epoch; epoch++) {
+      size_t i = perm[i_];
+      const float *datum = data + i * size;
+      if (baseline) {
+        all_sum += sum_impl_naive(datum, 0, size);
+      } else {
+        all_sum += sum_impl21(datum, 0, size);
+      }
+    }
+  }
+  ret = clock_gettime(CLOCK_MONOTONIC, &finish);
+  if (ret == -1) {
+    perror("clock_gettime()");
+    exit(1);
+  }
+  if (timespec_subtract(&finish, &start, &delta)) {
+    fprintf(stderr, "clock not monotonic???\n");
+    // ezyang: Exit here?
+  }
+  delta_ns = timespec_to_ns(&delta);
 
   if (FLAGS_debug) {
     if (baseline) {
@@ -585,17 +614,19 @@ uint64_t sum_run(bool baseline, const float * &data, int64_t size,
 int main_sum_run(const float *data, int64_t size, size_t counts,
                  int64_t threads, size_t grain) {
   std::cerr << " sum: ";
-  time_stats(sum_run(false, data, size, counts, threads, grain), size*counts);
+  time_stats(sum_run(false, data, size, counts, threads, grain),
+             size * counts * FLAGS_epoch);
   if (FLAGS_show_baseline) {
     std::cerr << " - ";
-    time_stats(sum_run(true, data, size, counts, threads, grain), size*counts);
+    time_stats(sum_run(true, data, size, counts, threads, grain),
+               size * counts * FLAGS_epoch);
   }
   return 0;
 }
 
 uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
-                     size_t size2, size_t counts, int64_t threads,
-                     size_t grain) {
+                       size_t size2, size_t counts, int64_t threads,
+                       size_t grain) {
   (void)threads;
   (void)grain;
   int ret;
@@ -608,30 +639,34 @@ uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
 
   struct timespec start, finish, delta;
   uint64_t delta_ns = 0;
-  for (size_t i_ = 0; i_ < counts; i_++) {
-    size_t i = perm[i_];
-    const float *datum = data + i * size1 * size2;
-    ret = clock_gettime(CLOCK_MONOTONIC, &start);
-    if (ret == -1) {
-      perror("clock_gettime()");
-      exit(1);
-    }
-    if (baseline) {
-      reducesum_impl_naive(datum, outarr, 0, size1, 0, size2, size2);
-    } else {
-      reducesum_impl3(datum, outarr, 0, size1, 0, size2, size2);
-    }
-    ret = clock_gettime(CLOCK_MONOTONIC, &finish);
-    if (ret == -1) {
-      perror("clock_gettime()");
-      exit(1);
-    }
-    if (timespec_subtract(&finish, &start, &delta)) {
-        fprintf(stderr, "clock not monotonic???\n");
-        // ezyang: Exit here?
-    }
-    delta_ns += timespec_to_ns(&delta);
+  ret = clock_gettime(CLOCK_MONOTONIC, &start);
+  if (ret == -1) {
+    perror("clock_gettime()");
+    exit(1);
   }
+  for (size_t epoch = 0; epoch < FLAGS_epoch; epoch++) {
+    std::random_shuffle(perm.begin(), perm.end());
+    for (size_t i_ = 0; i_ < counts; i_++) {
+      size_t i = perm[i_];
+      const float *datum = data + i * size1 * size2;
+      if (baseline) {
+        // reducesum_impl_naive(datum, outarr, 0, size1, 0, size2, size2);
+        reducesum_impl3(datum, outarr, 0, size1, 0, size2, size2);
+      } else {
+        reducesum_impl33(datum, outarr, 0, size1, 0, size2, size2);
+      }
+    }
+  }
+  ret = clock_gettime(CLOCK_MONOTONIC, &finish);
+  if (ret == -1) {
+    perror("clock_gettime()");
+    exit(1);
+  }
+  if (timespec_subtract(&finish, &start, &delta)) {
+    fprintf(stderr, "clock not monotonic???\n");
+    // ezyang: Exit here?
+  }
+  delta_ns = timespec_to_ns(&delta);
 
   if (FLAGS_debug) {
     std::cerr << std::endl;
@@ -647,14 +682,15 @@ uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
 int main_reducesum_run(const float *data, size_t size1, size_t size2,
                        size_t counts, int64_t threads, size_t grain) {
   std::cerr << " reduce_time: ";
-  time_stats(reducesum_run(false, data, size1, size2, counts, threads, grain), size1*size2*counts);
+  time_stats(reducesum_run(false, data, size1, size2, counts, threads, grain),
+             size1 * size2 * counts * FLAGS_epoch);
   if (FLAGS_show_baseline) {
     std::cerr << " - ";
-    time_stats(reducesum_run(true, data, size1, size2, counts, threads, grain), size1*size2*counts);
+    time_stats(reducesum_run(true, data, size1, size2, counts, threads, grain),
+               size1 * size2 * counts * FLAGS_epoch);
   }
   return 0;
 }
-
 
 // size_t size = 1000000; -- 1d bench -- size_t counts = 20000;
 int main(int argc, char *argv[]) {
@@ -663,7 +699,13 @@ int main(int argc, char *argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   size_t size1 = (size_t)FLAGS_size1;
   size_t size2 = (size_t)FLAGS_size2;
-  size_t counts = ((size_t)16 * (size_t)268435456) / (size1 * size2); // 16GiB of data
+  size_t counts =
+      ((size_t)16 * (size_t)268435456) / (size1 * size2); // 16GiB of data
+  assert(counts % FLAGS_epoch == 0);
+  // if (FLAGS_epoch <= 0) {
+  //   FLAGS_epoch = counts;
+  // }
+  counts = counts / FLAGS_epoch;
 
   if (FLAGS_debug) {
     counts = 1;
@@ -695,9 +737,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  std::cerr << "size1: " << std::setw(8) << size1  << " "
+  std::cerr << "size1: " << std::setw(8) << size1 << " "
             << "size2: " << std::setw(8) << size2 << " "
-            << "counts: " << std::setw(8) << counts << " ";
+            << "counts: " << std::setw(8) << counts << " "
+            << "epoch: " << std::setw(8) << FLAGS_epoch << " ";
   std::cerr << "threads: " << std::setw(8) << FLAGS_t;
   std::cerr << " granularity: " << std::setw(8) << FLAGS_grain;
   std::cerr << "\t";
