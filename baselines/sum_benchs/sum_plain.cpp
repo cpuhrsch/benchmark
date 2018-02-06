@@ -21,7 +21,7 @@
 
 DEFINE_int64(size1, 1024, "size1 of matrix");
 DEFINE_int64(size2, 1024, "size2 of matrix");
-DEFINE_int64(epoch, 1, "number of repeated runs");
+DEFINE_int64(epoch, 1, "number of runs with cache");
 DEFINE_int64(t, 1, "number of threads");
 DEFINE_int64(grain, 1, "granularity");
 DEFINE_bool(show_baseline, false, "Include baseline benchmark");
@@ -559,15 +559,15 @@ void make_vector(float *data_, size_t size) {
 }
 
 void time_stats(uint64_t s, double floats) {
-  std::cerr << " ns:\033[36m" << std::fixed << std::setw(11) << s << "\033[0m"
+  std::cerr << " ns:\033[36m" << std::fixed << std::setw(15) << s << "\033[0m"
             << " ops/ns: "
             << "\033[31m";
-  std::cerr << (double)floats / (double)s << "\033[0m";
+  std::cerr << std::setw(12) << (double)floats / (double)s << "\033[0m";
   std::cerr << " s: " << s / (double)NSEC;
 }
 
 uint64_t sum_run(bool baseline, const float *&data, int64_t size, size_t counts,
-                 int64_t threads, size_t grain) {
+                 int64_t threads, size_t grain, size_t epoch) {
   (void)threads;
   (void)grain;
   int ret;
@@ -582,7 +582,7 @@ uint64_t sum_run(bool baseline, const float *&data, int64_t size, size_t counts,
   }
   std::random_shuffle(perm.begin(), perm.end());
   for (size_t i_ = 0; i_ < counts; i_++) {
-    for (size_t epoch = 0; epoch < FLAGS_epoch; epoch++) {
+    for (size_t e = 0; e < epoch; e++) {
       size_t i = perm[i_];
       const float *datum = data + i * size;
       if (baseline) {
@@ -613,21 +613,21 @@ uint64_t sum_run(bool baseline, const float *&data, int64_t size, size_t counts,
 }
 
 int main_sum_run(const float *data, int64_t size, size_t counts,
-                 int64_t threads, size_t grain) {
+                 int64_t threads, size_t grain, size_t epoch) {
   std::cerr << " sum: ";
-  time_stats(sum_run(false, data, size, counts, threads, grain),
-             size * counts * FLAGS_epoch);
+  time_stats(sum_run(false, data, size, counts, threads, grain, epoch),
+             size * counts * epoch);
   if (FLAGS_show_baseline) {
-    std::cerr << " - ";
-    time_stats(sum_run(true, data, size, counts, threads, grain),
-               size * counts * FLAGS_epoch);
+    std::cerr << " | baseline -> ";
+    time_stats(sum_run(true, data, size, counts, threads, grain, epoch),
+               size * counts * epoch);
   }
   return 0;
 }
 
 uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
                        size_t size2, size_t counts, int64_t threads,
-                       size_t grain) {
+                       size_t grain, size_t epoch) {
   (void)threads;
   (void)grain;
   int ret;
@@ -645,7 +645,7 @@ uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
     perror("clock_gettime()");
     exit(1);
   }
-  for (size_t epoch = 0; epoch < FLAGS_epoch; epoch++) {
+  for (size_t e = 0; e < epoch; e++) {
     std::random_shuffle(perm.begin(), perm.end());
     for (size_t i_ = 0; i_ < counts; i_++) {
       size_t i = perm[i_];
@@ -654,7 +654,8 @@ uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
         // reducesum_impl_naive(datum, outarr, 0, size1, 0, size2, size2);
         reducesum_impl3(datum, outarr, 0, size1, 0, size2, size2);
       } else {
-        reducesum_impl33(datum, outarr, 0, size1, 0, size2, size2);
+        // reducesum_impl3(datum, outarr, 0, size1, 0, size2, size2);
+        reducesum_impl3_tile(datum, outarr, 0, size1, 0, size2, size2);
       }
     }
   }
@@ -676,19 +677,19 @@ uint64_t reducesum_run(bool baseline, const float *data, size_t size1,
     }
     std::cerr << std::endl;
   }
-  free(dat_ptr);
+  // free(dat_ptr);
   return delta_ns;
 }
 
 int main_reducesum_run(const float *data, size_t size1, size_t size2,
-                       size_t counts, int64_t threads, size_t grain) {
+                       size_t counts, int64_t threads, size_t grain, size_t epoch) {
   std::cerr << " reduce_time: ";
-  time_stats(reducesum_run(false, data, size1, size2, counts, threads, grain),
-             size1 * size2 * counts * FLAGS_epoch);
+  time_stats(reducesum_run(false, data, size1, size2, counts, threads, grain, epoch),
+             size1 * size2 * counts * epoch);
   if (FLAGS_show_baseline) {
-    std::cerr << " - ";
-    time_stats(reducesum_run(true, data, size1, size2, counts, threads, grain),
-               size1 * size2 * counts * FLAGS_epoch);
+    std::cerr << " | baseline -> ";
+    time_stats(reducesum_run(true, data, size1, size2, counts, threads, grain, epoch),
+               size1 * size2 * counts * epoch);
   }
   return 0;
 }
@@ -702,17 +703,23 @@ int main(int argc, char *argv[]) {
   size_t size2 = (size_t)FLAGS_size2;
   size_t counts =
       ((size_t)16 * (size_t)268435456) / (size1 * size2); // 16GiB of data
-  assert(counts % FLAGS_epoch == 0);
-  // if (FLAGS_epoch <= 0) {
-  //   FLAGS_epoch = counts;
-  // }
-  counts = counts / FLAGS_epoch;
-
   if (FLAGS_debug) {
     counts = 1;
     size1 = 32;
     size2 = 32;
   }
+  assert(FLAGS_epoch > 0 || FLAGS_epoch == -1);
+  size_t epoch = (size_t)FLAGS_epoch;
+  if (epoch > counts) {
+    epoch = counts;
+  }
+  assert(counts % epoch == 0);
+  counts = counts / epoch;
+
+  // if (FLAGS_epoch <= 0) {
+  //   FLAGS_epoch = counts;
+  // }
+
   assert(size1 >= _ALIGNMENT);
   assert(size2 >= _ALIGNMENT);
   assert(size1 % _ALIGNMENT == 0);
@@ -741,16 +748,16 @@ int main(int argc, char *argv[]) {
   std::cerr << "size1: " << std::setw(8) << size1 << " "
             << "size2: " << std::setw(8) << size2 << " "
             << "counts: " << std::setw(8) << counts << " "
-            << "epoch: " << std::setw(8) << FLAGS_epoch << " ";
+            << "epoch: " << std::setw(8) << epoch << " ";
   std::cerr << "threads: " << std::setw(8) << FLAGS_t;
   std::cerr << " granularity: " << std::setw(8) << FLAGS_grain;
   std::cerr << "\t";
   tbb::task_scheduler_init automatic(FLAGS_t);
   if (FLAGS_run_reducesum) {
-    main_reducesum_run(data_, size1, size2, counts, FLAGS_t, FLAGS_grain);
+    main_reducesum_run(data_, size1, size2, counts, FLAGS_t, FLAGS_grain, epoch);
   }
   if (FLAGS_run_sum) {
-    main_sum_run(data_, size1 * size2, counts, FLAGS_t, FLAGS_grain);
+    main_sum_run(data_, size1 * size2, counts, FLAGS_t, FLAGS_grain, epoch);
   }
   std::cerr << std::endl;
   free(dat_ptr);
