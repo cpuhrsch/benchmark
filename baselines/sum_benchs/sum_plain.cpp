@@ -330,6 +330,7 @@ float sum_impl3(float *arr, size_t size) {
 // TODO: Optimize for applying the same operation to the same memory many many times
 
 // TODO: threads parallization: preserve determinism accross runs
+// TODO: compare tbb to openmp
 
 float sum_impl21(const float *arr, size_t start, size_t end) {
   register size_t k;
