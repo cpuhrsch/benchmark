@@ -4,4 +4,4 @@ PyTorch
 */**/*.pyc
 *.out
 *.swp
-.nfs00300000000fd54b00000a7e
+.nfs*
