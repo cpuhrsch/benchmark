@@ -1,3 +1,5 @@
+TBB_USE_THREADING_TOOLS=1 g++ -std=c++11 -funroll-loops -ftree-vectorize -ftree-vectorizer-verbose=1  -O3 -Wall -Wextra -pedantic -mavx -mavx2 -march=native -g avx_sum.cpp -ltbb -lrt -lgflags
+
 ./a.out -size1 32 -size2 32     -run_reducesum -show_baseline -epoch 1
 ./a.out -size1 64 -size2 64     -run_reducesum -show_baseline -epoch 1
 ./a.out -size1 128 -size2 128   -run_reducesum -show_baseline -epoch 1
