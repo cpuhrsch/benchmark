@@ -4,6 +4,12 @@
 #include "tbb/tbb.h"
 #include "tbb/tick_count.h"
 
+// TODO: Play with TBB to have repeated runs give same results - same order for
+// merges no matter the num of threads
+
+// TODO: threads parallization: preserve determinism accross runs
+// TODO: compare tbb to openmp
+
 using namespace tbb;
 
 class SumFoo {

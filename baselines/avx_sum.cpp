@@ -1,3 +1,4 @@
+#include "benchmark_cpu.h"
 #include "immintrin.h"
 #include "xmmintrin.h"
 #include <cassert>
@@ -13,7 +14,6 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
-#include "benchmark_cpu.h"
 
 DEFINE_int64(size1, 1024, "size1 of matrix");
 DEFINE_int64(size2, 1024, "size2 of matrix");
@@ -25,7 +25,15 @@ DEFINE_bool(flush_cache, false, "flush cache before each run");
 DEFINE_bool(list_run_sums, false, "list avail sum algorithms");
 DEFINE_bool(list_run_reducesums, false, "list avail reducesum algorithms");
 
+// TODO: Detailed understanding of highest throughput
+// TODO: cycles per nanosecond
 
+// TODO: look at avx switching cost
+
+// TODO: L1, L2 has same throughput
+
+// TODO: Optimize for applying the same operation to the same memory many many
+// times
 
 constexpr size_t _WIDTH = 16;
 
@@ -212,27 +220,6 @@ void sum_impl3(float &sum, const float *arr, size_t start, size_t end) {
   }
 }
 
-// TODO: Look at ns per flop
-// TODO: Play with TBB to have repeated runs give same results - same order for
-// merges no matter the num of threads
-
-// TODO: Use cacheflush!
-
-// XXX: Clean up the code! Write more tests!
-
-// TODO: Detailed understanding of highest throughput
-// TODO: cycles per nanosecond
-
-// TODO: look at avx switching cost
-
-// TODO: L1, L2 has same throughput
-
-// TODO: Optimize for applying the same operation to the same memory many many
-// times
-
-// TODO: threads parallization: preserve determinism accross runs
-// TODO: compare tbb to openmp
-
 void sum_impl21(float &sum, const float *arr, size_t start, size_t end) {
   register size_t k;
   float sarr[8];
@@ -310,8 +297,6 @@ void sum_impl_std(float &sum, const float *arr, size_t start, size_t end) {
   sum = std::accumulate(arr + start, arr + end, 0);
 }
 
-
-
 static std::map<std::string, void (*)(const float *, float *, size_t, size_t,
                                       size_t, size_t, size_t)>
 register_reducesum_impls() {
@@ -330,8 +315,7 @@ register_reducesum_impls() {
 
 static std::map<std::string, void (*)(float &, const float *, size_t, size_t)>
 register_sum_impls() {
-  std::map<std::string, void (*)(float &, const float *, size_t, size_t)>
-      impls;
+  std::map<std::string, void (*)(float &, const float *, size_t, size_t)> impls;
   impls["sum_impl4"] = &sum_impl4;
   impls["sum_impl31"] = &sum_impl31;
   impls["sum_impl3"] = &sum_impl3;
@@ -342,7 +326,6 @@ register_sum_impls() {
   impls["sum_impl21_fma"] = &sum_impl21_fma;
   return impls;
 }
-
 
 constexpr size_t _SEED = 1;
 
@@ -370,7 +353,7 @@ void make_vector(float *data_, size_t size) {
 
 constexpr size_t _ALIGNMENT = 32;
 
-void make_float_data(float** data_, size_t size) {
+void make_float_data(float **data_, size_t size) {
   if (posix_memalign((void **)data_, _ALIGNMENT, size * sizeof(float)))
     throw std::invalid_argument("received negative value");
   memset(*data_, 0, size * sizeof(float));
@@ -384,11 +367,9 @@ void time_stats(uint64_t s, double floats) {
   std::cout << ",(s: " << s / (double)NSEC << ")";
 }
 
-uint64_t sum_run(
-void (*fun)(float &, const float *, size_t, size_t),
-    
-    const float *data, size_t size, size_t counts,
-                 size_t epoch) {
+uint64_t sum_run(void (*fun)(float &, const float *, size_t, size_t),
+
+                 const float *data, size_t size, size_t counts, size_t epoch) {
   float all_sum = 0;
   auto perm = rand_perm(counts);
   auto start = get_time();
@@ -415,12 +396,11 @@ void (*fun)(float &, const float *, size_t, size_t),
   return timespec_subtract_to_ns(&start, &end);
 }
 
-
-uint64_t reducesum_run(
-    void (*fun)(const float *, float *, size_t, size_t, size_t, size_t, size_t),
-    const float *data, size_t size1, size_t size2, size_t counts,
-    size_t epoch) {
-  float* outarr = NULL;
+uint64_t reducesum_run(void (*fun)(const float *, float *, size_t, size_t,
+                                   size_t, size_t, size_t),
+                       const float *data, size_t size1, size_t size2,
+                       size_t counts, size_t epoch) {
+  float *outarr = NULL;
   make_float_data(&outarr, size2);
   auto perm = rand_perm(counts);
   auto start = get_time();
@@ -443,7 +423,8 @@ uint64_t reducesum_run(
     reducesum_impl_naive(data, outarr1, 0, size1, 0, size2, size2);
     bool error = false;
     for (size_t i = 0; i < size2; i++) {
-      if(outarr1[i] != outarr[i]) error = true;
+      if (outarr1[i] != outarr[i])
+        error = true;
     }
     if (error) {
       for (size_t i = 0; i < size2; i++) {
@@ -454,7 +435,7 @@ uint64_t reducesum_run(
     std::free(outarr1);
   }
   if (outarr)
-  std::free(outarr);
+    std::free(outarr);
   return timespec_subtract_to_ns(&start, &end);
 }
 
@@ -499,11 +480,10 @@ int main(int argc, char *argv[]) {
   assert(size1 % _ALIGNMENT == 0);
   assert(size2 % _ALIGNMENT == 0);
 
-  float* data_ = NULL;
+  float *data_ = NULL;
   make_float_data(&data_, counts * size1 * size2);
 
   make_vector(data_, size1 * size2 * counts);
-
 
   std::cout << "(size1:" << std::setw(8) << size1 << "),"
             << "(size2:" << std::setw(8) << size2 << "),"
