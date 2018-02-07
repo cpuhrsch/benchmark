@@ -28,12 +28,15 @@ DEFINE_bool(list_run_reducesums, false, "list avail reducesum algorithms");
 // TODO: Detailed understanding of highest throughput
 // TODO: cycles per nanosecond
 
-// TODO: look at avx switching cost
+// TODO: look at avx switching cost and power settings
 
 // TODO: L1, L2 has same throughput
 
 // TODO: Optimize for applying the same operation to the same memory many many
 // times
+
+// TODO: Run benchmark multiple times and average (mean + stdev) and run it longer
+// TODO: Use taskset
 
 constexpr size_t _WIDTH = 16;
 
@@ -321,7 +324,7 @@ register_sum_impls() {
   impls["sum_impl3"] = &sum_impl3;
   impls["sum_impl2"] = &sum_impl2;
   impls["sum_impl_naive"] = &sum_impl_naive;
-  impls["sum_impl_std"] = &sum_impl_std;
+  // impls["sum_impl_std"] = &sum_impl_std; - simply too slow
   impls["sum_impl21"] = &sum_impl21;
   impls["sum_impl21_fma"] = &sum_impl21_fma;
   return impls;
@@ -461,7 +464,7 @@ int main(int argc, char *argv[]) {
   size_t size1 = (size_t)FLAGS_size1;
   size_t size2 = (size_t)FLAGS_size2;
   size_t counts =
-      ((size_t)16 * (size_t)268435456) / (size1 * size2); // 16GiB of data
+      ((size_t)64 * (size_t)268435456) / (size1 * size2); // 16GiB of data
   assert(FLAGS_epoch > 0 || FLAGS_epoch == -1);
   size_t epoch = (size_t)FLAGS_epoch;
   if (epoch > counts) {
@@ -487,6 +490,7 @@ int main(int argc, char *argv[]) {
 
   std::cout << "(size1:" << std::setw(8) << size1 << "),"
             << "(size2:" << std::setw(8) << size2 << "),"
+            << "(size2*size1:" << std::setw(8) << size1*size2 << "),"
             << "(counts:" << std::setw(8) << counts << "),"
             << "(epoch:" << std::setw(8) << epoch << ")";
   if (FLAGS_run_reducesum != "") {
