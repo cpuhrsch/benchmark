@@ -1,3 +1,4 @@
+#include "avx_sum.h"
 #include "tbb/blocked_range.h"
 #include "tbb/parallel_reduce.h"
 #include "tbb/task_scheduler_init.h"
@@ -95,4 +96,10 @@ void reducesum_impl_tbb(const float *arr, float *outarr, size_t size1,
   for (size_t i = 0; i < size2; i++) {
     outarr[i] = sf.my_sum[i];
   }
+}
+
+int main(int argc, char *argv[]) {
+  gflags::SetUsageMessage("some usage message");
+  gflags::SetVersionString("1.0.0");
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 }

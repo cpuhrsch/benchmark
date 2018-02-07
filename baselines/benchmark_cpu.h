@@ -1,3 +1,5 @@
+#pragma once
+
 #include <time.h>
 #include <numeric>
 #include <algorithm>
@@ -45,7 +47,7 @@ static inline uint64_t timespec_to_ns(struct timespec *t) {
  *
  * Returns 1 if the difference is negative, otherwise 0.
  */
-void timespec_subtract(struct timespec *x, struct timespec *y,
+static inline void timespec_subtract(struct timespec *x, struct timespec *y,
                       struct timespec *result) {
   if (x->tv_nsec < y->tv_nsec) {
     int secs = (y->tv_nsec - x->tv_nsec) / NSEC + 1;
@@ -68,17 +70,17 @@ void timespec_subtract(struct timespec *x, struct timespec *y,
   }
 }
 
-void cacheflush(void const* ptr) {
+static inline void mycacheflush(void const* ptr) {
   _mm_clflush(ptr);
 }
 
-uint64_t timespec_subtract_to_ns(struct timespec *start, struct timespec *finish) {
+static inline uint64_t timespec_subtract_to_ns(struct timespec *start, struct timespec *finish) {
   struct timespec delta;
   timespec_subtract(finish, start, &delta);
   return timespec_to_ns(&delta);
 }
 
-inline struct timespec get_time() {
+static inline struct timespec get_time() {
   struct timespec start;
   int ret = clock_gettime(CLOCK_MONOTONIC, &start);
   if (ret == -1) {
@@ -93,7 +95,7 @@ static inline uint16_t __mm_crc32_u64(uint64_t crc, uint64_t val) {
   return crc;
 }
 
-inline unsigned int sfrand(unsigned int x) {
+static inline unsigned int sfrand(unsigned int x) {
   unsigned int seed = x * 16807;
   return ((seed) >> 9) | 0x40000000;
 }
@@ -105,7 +107,7 @@ static inline size_t hash(size_t x) {
   return h;
 }
 
-inline std::vector<size_t> rand_perm(size_t max) {
+static inline std::vector<size_t> rand_perm(size_t max) {
   std::vector<size_t> perm(max);
   std::iota(perm.begin(), perm.end(), 0);
   std::random_shuffle(perm.begin(), perm.end());
