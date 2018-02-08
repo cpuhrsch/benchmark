@@ -1,17 +1,5 @@
 #include "avx_sum.h"
 
-// TODO: Detailed understanding of highest throughput
-// TODO: cycles per nanosecond
-
-// TODO: look at avx switching cost and power settings
-
-// TODO: L1, L2 has same throughput
-
-// TODO: Optimize for applying the same operation to the same memory many many
-// times
-
-// TODO: Run benchmark multiple times and average (mean + stdev) and run it longer
-// TODO: Use taskset
 
 
 void reducesum_impl2(const float *arr, float *outarr, size_t size1b,

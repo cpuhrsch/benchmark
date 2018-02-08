@@ -1,11 +1,5 @@
 #include "tbb_sum.h"
 
-// TODO: Play with TBB to have repeated runs give same results - same order for
-// merges no matter the num of threads
-
-// TODO: threads parallization: preserve determinism accross runs
-// TODO: compare tbb to openmp
-
 using namespace tbb;
 
 class SumFoo {
@@ -52,18 +46,20 @@ float RepeatableReduce( const float* a, size_t start, size_t end, size_t thresho
    }
 }
 
-void sum_impl_tbb_2(float &sum, const float *a, size_t start, size_t end, size_t threshold) {
+void sum_impl_tbb_2(float &sum, const float *a, size_t start, size_t end, size_t threshold, size_t max_num_thread) {
+  (void) max_num_thread;
   sum = RepeatableReduce(a, start, end, threshold);
 }
 
 void sum_impl_tbb(float &sum, const float *a, size_t start, size_t end,
-                  size_t threshold) {
+                  size_t threshold, size_t max_num_thread) {
+  (void) max_num_thread;
   if (end - start < threshold) {
     sum_impl21(sum, a, start, end);
   } else {
     SumFoo sf(a);
     // static affinity_partitioner ap;
-    parallel_reduce(blocked_range<size_t>(start, end, 64), sf); //, ap);
+    parallel_reduce(blocked_range<size_t>(start, end, threshold), sf); //, ap);
     sum = sf.my_sum;
   }
 }
@@ -131,4 +127,15 @@ void reducesum_impl_tbb(const float *arr, float *outarr, size_t size1b,
   for (size_t i = 0; i < size2; i++) {
     outarr[i] = sf.my_sum[i];
   }
+}
+
+std::map<std::string,
+         void (*)(float &, const float *, size_t, size_t, size_t, size_t)>
+register_sum_impls_tbb() {
+  std::map<std::string,
+           void (*)(float &, const float *, size_t, size_t, size_t, size_t)>
+      impls;
+  impls["sum_impl_tbb"] = &sum_impl_tbb;
+  impls["sum_impl_tbb_2"] = &sum_impl_tbb_2;
+  return impls;
 }

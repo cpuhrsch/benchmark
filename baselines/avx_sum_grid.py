@@ -13,10 +13,15 @@ GRID = [
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('run')
+    parser.add_argument('repeat', type=int) # Repeat to increase benchmark precision
     
     args = parser.parse_args()
+    grid = []
     for (size1, size2) in GRID:
-        print(CMD + " -size1 " + str(size1) + " -size2 " + str(size2) + " -epoch -1 " + args.run)
+        grid.append(CMD + " -size1 " + str(size1) + " -size2 " + str(size2) + " -epoch -1 " + args.run)
+    for g in grid:
+        for _ in range(args.repeat):
+            print(g)
 
 # -run_sum -run_reducesum -epoch -1
 # -run_sum -run_reducesum -epoch -1

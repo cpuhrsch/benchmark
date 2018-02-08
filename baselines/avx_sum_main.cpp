@@ -10,11 +10,29 @@ DEFINE_int64(epoch, 1, "number of runs with cache");
 DEFINE_bool(test, false, "Show Debug matrix");
 DEFINE_string(run_sum, "", "run given sum algorithm");
 DEFINE_string(run_reducesum, "", "run given sumreduce algorithm");
-DEFINE_bool(run_sum_tbb, false, "run given sumreduce algorithm");
+DEFINE_string(run_sum_tbb, "", "run given sum tbb algorithm");
 DEFINE_bool(run_reducesum_tbb, false, "run given sumreduce algorithm");
 DEFINE_bool(flush_cache, false, "flush cache before each run");
 DEFINE_bool(list_run_sums, false, "list avail sum algorithms");
 DEFINE_bool(list_run_reducesums, false, "list avail reducesum algorithms");
+
+// TODO: Detailed understanding of highest throughput
+// TODO: cycles per nanosecond
+
+// TODO: look at avx switching cost and power settings
+
+// TODO: L1, L2 has same throughput
+
+// TODO: Optimize for applying the same operation to the same memory many many
+// times
+
+// TODO: Run benchmark multiple times and average (mean + stdev) and run it longer
+// TODO: Use taskset
+
+// TODO: Play with TBB to have repeated runs give same results - same order for
+// merges no matter the num of threads - test of conditional numerical reproducibility
+
+// TODO: compare tbb to openmp
 
 void make_vector(float *data_, size_t size) {
   // std::ifstream ifs(FLAGS_inpath, std::ifstream::binary);
@@ -70,8 +88,9 @@ void sum_test(float all_sum, const float *data, size_t size, size_t counts,
   }
 }
 
-uint64_t sum_tbb_run(const float *data, size_t size, size_t counts,
-                     size_t epoch) {
+uint64_t
+sum_tbb_run(void (*fun)(float &, const float *, size_t, size_t, size_t, size_t),
+            const float *data, size_t size, size_t counts, size_t epoch) {
   float all_sum = 0;
   auto perm = rand_perm(counts);
   auto start = get_time();
@@ -83,8 +102,9 @@ uint64_t sum_tbb_run(const float *data, size_t size, size_t counts,
       float sum;
       if (FLAGS_flush_cache)
         mycacheflush(data);
-      sum_impl_tbb(sum, datum, 0, size, FLAGS_threshold);
+      // sum_impl_tbb(sum, datum, 0, size, FLAGS_threshold);
       //      sum_impl_tbb_2(sum, datum, 0, size, FLAGS_threshold);
+      fun(sum, datum, 0, size, FLAGS_threshold, -1);
       all_sum += sum;
     }
   }
@@ -261,12 +281,17 @@ int main(int argc, char *argv[]) {
                size1 * size2 * counts * epoch);
     std::cout << std::endl;
   }
-  if (FLAGS_run_sum_tbb) {
+  if (FLAGS_run_sum_tbb != "") {
     assert(FLAGS_num_thread > 0);
     assert(FLAGS_threshold > 0);
+    assert(FLAGS_threshold  % _ALIGNMENT == 0);
+    std::string funname = FLAGS_run_sum_tbb;
+    auto funs = register_sum_impls_tbb();
+    auto fun = funs[funname];
     print_settings(size1, size2, counts, epoch);
+    std::cout << "(fun: " << std::setw(20) << funname << "),";
     tbb::task_scheduler_init tbb_init(FLAGS_num_thread);
-    time_stats(sum_tbb_run(data_, size1 * size2, counts, epoch),
+    time_stats(sum_tbb_run(fun, data_, size1 * size2, counts, epoch),
                size1 * size2 * counts * epoch);
     std::cout << std::endl;
   }
@@ -275,7 +300,7 @@ int main(int argc, char *argv[]) {
     auto funs = register_reducesum_impls();
     auto fun = funs[funname];
     print_settings(size1, size2, counts, epoch);
-    std::cout << "(fun: " << std::setw(25) << funname << "),";
+    std::cout << "(fun: " << std::setw(20) << funname << "),";
     time_stats(reducesum_run(fun, data_, size1, size2, counts, epoch),
                size1 * size2 * counts * epoch);
     std::cout << std::endl;
@@ -285,7 +310,7 @@ int main(int argc, char *argv[]) {
     auto funs = register_sum_impls();
     auto fun = funs[funname];
     print_settings(size1, size2, counts, epoch);
-    std::cout << "(fun: " << std::setw(25) << funname << "),";
+    std::cout << "(fun: " << std::setw(20) << funname << "),";
     time_stats(sum_run(fun, data_, size1 * size2, counts, epoch),
                size1 * size2 * counts * epoch);
     std::cout << std::endl;

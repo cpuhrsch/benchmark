@@ -9,5 +9,9 @@
 #include "tbb/task_scheduler_init.h"
 
 void reducesum_impl_tbb(const float *, float *, size_t, size_t, size_t, size_t, size_t, size_t);
-void sum_impl_tbb(float &, const float *, size_t, size_t, size_t);
-void sum_impl_tbb_2(float &, const float *, size_t, size_t, size_t);
+void sum_impl_tbb(float &, const float *, size_t, size_t, size_t, size_t);
+void sum_impl_tbb_2(float &, const float *, size_t, size_t, size_t, size_t);
+
+std::map<std::string,
+         void (*)(float &, const float *, size_t, size_t, size_t, size_t)>
+register_sum_impls_tbb();
