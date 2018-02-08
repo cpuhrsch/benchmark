@@ -58,3 +58,23 @@ lstm_variable.exe: lstm_variable.cpp benchmark_common.h
 
 run_%: %.exe
 	MKL_NUM_THREADS=1 LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CONDA_PREFIX}/lib:${PYTORCH_HOME}/torch/lib:${CUDNN_LIB_DIR}:${LD_LIBRARY_PATH} numactl --cpunodebind=0 --membind=0 taskset 0x1 perf stat ./$<
+
+avx_sum.exec: avx_sum_main.cpp avx_sum.cpp tbb_sum.cpp
+	TBB_USE_THREADING_TOOLS=1 \
+	g++ -std=c++11 \
+	    -funroll-loops \
+	    -ftree-vectorize \
+	    -ftree-vectorizer-verbose=1 \
+	    -O3 \
+	    -Wall \
+	    -Wextra \
+	    -pedantic \
+	    -mavx \
+	    -mavx2 \
+	    -march=native \
+	    -g \
+	    -ltbb \
+	    -lrt \
+	    -lgflags \
+	    $? -o $@
+

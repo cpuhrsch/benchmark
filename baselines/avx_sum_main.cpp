@@ -1,12 +1,16 @@
 #include "avx_sum.h"
+#include "tbb_sum.h"
 #include <gflags/gflags.h>
 
 DEFINE_int64(size1, 1024, "size1 of matrix");
 DEFINE_int64(size2, 1024, "size2 of matrix");
+DEFINE_int64(num_thread, 0, "number of threads to use (if applicable)");
 DEFINE_int64(epoch, 1, "number of runs with cache");
 DEFINE_bool(test, false, "Show Debug matrix");
 DEFINE_string(run_sum, "", "run given sum algorithm");
 DEFINE_string(run_reducesum, "", "run given sumreduce algorithm");
+DEFINE_bool(run_sum_tbb, false, "run given sumreduce algorithm");
+DEFINE_bool(run_reducesum_tbb, false, "run given sumreduce algorithm");
 DEFINE_bool(flush_cache, false, "flush cache before each run");
 DEFINE_bool(list_run_sums, false, "list avail sum algorithms");
 DEFINE_bool(list_run_reducesums, false, "list avail reducesum algorithms");
@@ -45,8 +49,49 @@ void time_stats(uint64_t s, double floats) {
   std::cout << ",(s: " << s / (double)NSEC << ")";
 }
 
-uint64_t sum_run(void (*fun)(float &, const float *, size_t, size_t),
+void sum_test(float all_sum, const float *data, size_t size, size_t counts, size_t epoch) {
+  if (FLAGS_test) {
+    assert(epoch == 1);
+    assert(counts == 1);
+    float sum1;
+    sum_impl_naive(sum1, data, 0, size);
+    if (sum1 != all_sum) {
+      std::cout << "\033[31msum test failed!\033[0m + ";
+      std::cout << "ref sum: \033[31m" << sum1;
+      std::cout << "\033[0m impl sum: \033[31m" << all_sum << "\033[0m + ";
+      // for (size_t i = 0; i < size2; i++) {
+      //   std::cout << "a: " << outarr1[i] << "b: " << outarr[i] << std::endl;
+      // }
+    } else {
+      std::cout << "\033[37msum test succeeded!\033[0m + ";
+    }
+  }
+}
 
+uint64_t sum_tbb_run(
+                       const float *data, size_t size,
+                       size_t counts, size_t epoch) {
+  float all_sum = 0;
+  auto perm = rand_perm(counts);
+  auto start = get_time();
+  for (size_t e = 0; e < epoch; e++) {
+    std::random_shuffle(perm.begin(), perm.end());
+    for (size_t i_ = 0; i_ < counts; i_++) {
+      size_t i = perm[i_];
+      const float *datum = data + i * size;
+      float sum;
+      if (FLAGS_flush_cache)
+        mycacheflush(data);
+      sum_impl_tbb(sum, datum, size, 64);
+      all_sum += sum;
+    }
+  }
+  auto end = get_time();
+  sum_test(all_sum, data, size, counts, epoch);
+  return timespec_subtract_to_ns(&start, &end);
+}
+
+uint64_t sum_run(void (*fun)(float &, const float *, size_t, size_t),
                  const float *data, size_t size, size_t counts, size_t epoch) {
   float all_sum = 0;
   auto perm = rand_perm(counts);
@@ -64,18 +109,39 @@ uint64_t sum_run(void (*fun)(float &, const float *, size_t, size_t),
     }
   }
   auto end = get_time();
-  if (FLAGS_test) {
-    assert(epoch == 1);
-    assert(counts == 1);
-    float sum1;
-    fun(sum1, data, 0, size);
-    assert(sum1 == all_sum);
-  }
+  sum_test(all_sum, data, size, counts, epoch);
   return timespec_subtract_to_ns(&start, &end);
 }
 
-uint64_t reducesum_run(void (*fun)(const float *, float *, size_t, size_t,
-                                   size_t, size_t, size_t),
+
+void reducesum_test(const float *data, size_t size1, size_t size2,
+                    size_t counts, size_t epoch, float *outarr) {
+  if (FLAGS_test) {
+    std::cout << " + Running test!";
+    assert(epoch == 1);
+    assert(counts == 1);
+    float *outarr1 = NULL;
+    make_float_data(&outarr1, size2);
+    reducesum_impl_naive(data, outarr1, 0, size1, 0, size2, size2);
+    bool error = false;
+    for (size_t i = 0; i < size2; i++) {
+      if (outarr1[i] != outarr[i])
+        error = true;
+    }
+    if (error) {
+      std::cout << "\033[31mreducesum test failed!\033[0m + ";
+      // for (size_t i = 0; i < size2; i++) {
+      //   std::cout << "a: " << outarr1[i] << "b: " << outarr[i] << std::endl;
+      // }
+    } else {
+      std::cout << "\033[37mreducesum test succeeded!\033[0m + ";
+    }
+    std::free(outarr1);
+  }
+}
+
+uint64_t reducesum_tbb_run(
+                          
                        const float *data, size_t size1, size_t size2,
                        size_t counts, size_t epoch) {
   float *outarr = NULL;
@@ -89,29 +155,38 @@ uint64_t reducesum_run(void (*fun)(const float *, float *, size_t, size_t,
       const float *datum = data + i * size1 * size2;
       if (FLAGS_flush_cache)
         mycacheflush(data);
+    //  fun(datum, outarr, 0, size1, 0, size2, size2);
+      reducesum_impl_tbb(datum, outarr, 0, size1, 0, size2, size2, FLAGS_num_thread);
+    }
+  }
+  auto end = get_time();
+  reducesum_test(data, size1, size2, counts, epoch, outarr);
+  if (outarr)
+    std::free(outarr);
+  return timespec_subtract_to_ns(&start, &end);
+}
+
+uint64_t reducesum_run(void (*fun)(const float *, float *, size_t, size_t,
+                                   size_t, size_t, size_t),
+                       const float *data, size_t size1, size_t size2,
+                       size_t counts, size_t epoch) {
+  float *outarr = NULL;
+  make_float_data(&outarr, size2);
+  auto perm = rand_perm(counts);
+  // std::cerr << "default num threads: " << n << std::endl;
+  auto start = get_time();
+  for (size_t e = 0; e < epoch; e++) {
+    std::random_shuffle(perm.begin(), perm.end());
+    for (size_t i_ = 0; i_ < counts; i_++) {
+      size_t i = perm[i_];
+      const float *datum = data + i * size1 * size2;
+      if (FLAGS_flush_cache)
+        mycacheflush(data);
       fun(datum, outarr, 0, size1, 0, size2, size2);
     }
   }
   auto end = get_time();
-  if (FLAGS_test) {
-    assert(epoch == 1);
-    assert(counts == 1);
-    float *outarr1 = NULL;
-    make_float_data(&outarr1, size2);
-    reducesum_impl_naive(data, outarr1, 0, size1, 0, size2, size2);
-    bool error = false;
-    for (size_t i = 0; i < size2; i++) {
-      if (outarr1[i] != outarr[i])
-        error = true;
-    }
-    if (error) {
-      for (size_t i = 0; i < size2; i++) {
-        std::cout << "a: " << outarr1[i] << "b: " << outarr[i] << std::endl;
-      }
-      exit(1);
-    }
-    std::free(outarr1);
-  }
+  reducesum_test(data, size1, size2, counts, epoch, outarr);
   if (outarr)
     std::free(outarr);
   return timespec_subtract_to_ns(&start, &end);
@@ -168,6 +243,18 @@ int main(int argc, char *argv[]) {
             << "(size2*size1:" << std::setw(8) << size1*size2 << "),"
             << "(counts:" << std::setw(8) << counts << "),"
             << "(epoch:" << std::setw(8) << epoch << ")";
+  if (FLAGS_run_reducesum_tbb) {
+    assert(FLAGS_num_thread > 0);
+    std::cout << "(num_thread:" << std::setw(8) << FLAGS_num_thread << ")";
+    time_stats(reducesum_tbb_run(data_, size1, size2, counts, epoch),
+               size1 * size2 * counts * epoch);
+  }
+  if (FLAGS_run_sum_tbb) {
+    assert(FLAGS_num_thread > 0);
+    std::cout << "(num_thread:" << std::setw(8) << FLAGS_num_thread << ")";
+    time_stats(sum_tbb_run(data_, size1 * size2, counts, epoch),
+               size1 * size2 * counts * epoch);
+  }
   if (FLAGS_run_reducesum != "") {
     std::string funname = FLAGS_run_reducesum;
     auto funs = register_reducesum_impls();

@@ -86,7 +86,7 @@ void reducesum_impl3(const float *arr, float *outarr, size_t size1b,
                      size_t size1e, size_t size2b, size_t size2e,
                      size_t size2) {
   assert(size2e > 63);
-  size_t end = size2e - 63;
+  size_t end = _divup(size2e, 64) * 64;
   for (size_t k = size2b; k < end; k += 64) {
     __m256 a[8];
     __m256 b[8];
@@ -198,7 +198,9 @@ void sum_impl21(float &sum, const float *arr, size_t start, size_t end) {
   __m256 part_sum, tmp_sum[4], tmp_sum1, tmp_sum2, tmp_sum3, a[8];
   part_sum = _mm256_set1_ps(0);
   k = start;
-  assert(end % 64 == 0);
+  if (end % 64 != 0) {
+    std::cout << "end: " << end << std::endl;
+  }
   for (; k < end; k += 64) {
     for (size_t i = 0; i < 8; i++) {
       a[i] = _mm256_loadu_ps(arr + k + i * 8);

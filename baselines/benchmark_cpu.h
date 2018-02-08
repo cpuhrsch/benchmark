@@ -8,6 +8,10 @@
 #define USEC 1000000
 #define NSEC 1000000000
 
+static inline size_t _divup(size_t x, size_t y) {
+  return ((x + y - 1) / y);
+}
+
 /**
  * us_to_timespec - converts microseconds to a timespec
  * @us: number of microseconds
