@@ -4,7 +4,8 @@
 
 DEFINE_int64(size1, 1024, "size1 of matrix");
 DEFINE_int64(size2, 1024, "size2 of matrix");
-DEFINE_int64(num_thread, 0, "number of threads to use (if applicable)");
+DEFINE_int64(num_thread, 0, "number of threads (if applicable)");
+DEFINE_int64(threshold, 0, "parallelization threshold (if applicable)");
 DEFINE_int64(epoch, 1, "number of runs with cache");
 DEFINE_bool(test, false, "Show Debug matrix");
 DEFINE_string(run_sum, "", "run given sum algorithm");
@@ -49,7 +50,8 @@ void time_stats(uint64_t s, double floats) {
   std::cout << ",(s: " << s / (double)NSEC << ")";
 }
 
-void sum_test(float all_sum, const float *data, size_t size, size_t counts, size_t epoch) {
+void sum_test(float all_sum, const float *data, size_t size, size_t counts,
+              size_t epoch) {
   if (FLAGS_test) {
     assert(epoch == 1);
     assert(counts == 1);
@@ -68,9 +70,8 @@ void sum_test(float all_sum, const float *data, size_t size, size_t counts, size
   }
 }
 
-uint64_t sum_tbb_run(
-                       const float *data, size_t size,
-                       size_t counts, size_t epoch) {
+uint64_t sum_tbb_run(const float *data, size_t size, size_t counts,
+                     size_t epoch) {
   float all_sum = 0;
   auto perm = rand_perm(counts);
   auto start = get_time();
@@ -82,7 +83,8 @@ uint64_t sum_tbb_run(
       float sum;
       if (FLAGS_flush_cache)
         mycacheflush(data);
-      sum_impl_tbb(sum, datum, size, 64);
+      sum_impl_tbb(sum, datum, 0, size, FLAGS_threshold);
+      //      sum_impl_tbb_2(sum, datum, 0, size, FLAGS_threshold);
       all_sum += sum;
     }
   }
@@ -113,7 +115,6 @@ uint64_t sum_run(void (*fun)(float &, const float *, size_t, size_t),
   return timespec_subtract_to_ns(&start, &end);
 }
 
-
 void reducesum_test(const float *data, size_t size1, size_t size2,
                     size_t counts, size_t epoch, float *outarr) {
   if (FLAGS_test) {
@@ -141,9 +142,9 @@ void reducesum_test(const float *data, size_t size1, size_t size2,
 }
 
 uint64_t reducesum_tbb_run(
-                          
-                       const float *data, size_t size1, size_t size2,
-                       size_t counts, size_t epoch) {
+
+    const float *data, size_t size1, size_t size2, size_t counts,
+    size_t epoch) {
   float *outarr = NULL;
   make_float_data(&outarr, size2);
   auto perm = rand_perm(counts);
@@ -155,8 +156,9 @@ uint64_t reducesum_tbb_run(
       const float *datum = data + i * size1 * size2;
       if (FLAGS_flush_cache)
         mycacheflush(data);
-    //  fun(datum, outarr, 0, size1, 0, size2, size2);
-      reducesum_impl_tbb(datum, outarr, 0, size1, 0, size2, size2, FLAGS_num_thread);
+      //  fun(datum, outarr, 0, size1, 0, size2, size2);
+      reducesum_impl_tbb(datum, outarr, 0, size1, 0, size2, size2,
+                         FLAGS_num_thread);
     }
   }
   auto end = get_time();
@@ -190,6 +192,20 @@ uint64_t reducesum_run(void (*fun)(const float *, float *, size_t, size_t,
   if (outarr)
     std::free(outarr);
   return timespec_subtract_to_ns(&start, &end);
+}
+
+void print_settings(size_t size1, size_t size2, size_t counts, size_t epoch) {
+  std::cout << "(size1:" << std::setw(8) << size1 << "),"
+            << "(size2:" << std::setw(8) << size2 << "),"
+            << "(size2*size1:" << std::setw(8) << size1 * size2 << "),"
+            << "(counts:" << std::setw(8) << counts << "),"
+            << "(epoch:" << std::setw(8) << epoch << "),";
+  if (FLAGS_num_thread > 0) {
+    std::cout << "(num_thread:" << std::setw(8) << FLAGS_num_thread << "),";
+  }
+  if (FLAGS_threshold > 0) {
+    std::cout << "(threshold:" << std::setw(8) << FLAGS_threshold << "),";
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -238,40 +254,42 @@ int main(int argc, char *argv[]) {
 
   make_vector(data_, size1 * size2 * counts);
 
-  std::cout << "(size1:" << std::setw(8) << size1 << "),"
-            << "(size2:" << std::setw(8) << size2 << "),"
-            << "(size2*size1:" << std::setw(8) << size1*size2 << "),"
-            << "(counts:" << std::setw(8) << counts << "),"
-            << "(epoch:" << std::setw(8) << epoch << ")";
   if (FLAGS_run_reducesum_tbb) {
     assert(FLAGS_num_thread > 0);
-    std::cout << "(num_thread:" << std::setw(8) << FLAGS_num_thread << ")";
+    print_settings(size1, size2, counts, epoch);
     time_stats(reducesum_tbb_run(data_, size1, size2, counts, epoch),
                size1 * size2 * counts * epoch);
+    std::cout << std::endl;
   }
   if (FLAGS_run_sum_tbb) {
     assert(FLAGS_num_thread > 0);
-    std::cout << "(num_thread:" << std::setw(8) << FLAGS_num_thread << ")";
+    assert(FLAGS_threshold > 0);
+    print_settings(size1, size2, counts, epoch);
+    tbb::task_scheduler_init tbb_init(FLAGS_num_thread);
     time_stats(sum_tbb_run(data_, size1 * size2, counts, epoch),
                size1 * size2 * counts * epoch);
+    std::cout << std::endl;
   }
   if (FLAGS_run_reducesum != "") {
     std::string funname = FLAGS_run_reducesum;
     auto funs = register_reducesum_impls();
     auto fun = funs[funname];
-    std::cout << ",(fun: " << std::setw(25) << funname << "),";
+    print_settings(size1, size2, counts, epoch);
+    std::cout << "(fun: " << std::setw(25) << funname << "),";
     time_stats(reducesum_run(fun, data_, size1, size2, counts, epoch),
                size1 * size2 * counts * epoch);
+    std::cout << std::endl;
   }
   if (FLAGS_run_sum != "") {
     std::string funname = FLAGS_run_sum;
     auto funs = register_sum_impls();
     auto fun = funs[funname];
-    std::cout << ",(fun: " << std::setw(25) << funname << "),";
+    print_settings(size1, size2, counts, epoch);
+    std::cout << "(fun: " << std::setw(25) << funname << "),";
     time_stats(sum_run(fun, data_, size1 * size2, counts, epoch),
                size1 * size2 * counts * epoch);
+    std::cout << std::endl;
   }
-  std::cout << std::endl;
   std::free(data_);
   gflags::ShutDownCommandLineFlags();
 }

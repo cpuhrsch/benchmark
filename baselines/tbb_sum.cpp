@@ -34,11 +34,38 @@ public:
   SumFoo(const float * a) : my_a(a), my_sum(0) {}
 };
 
-void sum_impl_tbb(float &sum, const float *a, size_t size, size_t grain) {
-  SumFoo sf(a);
-  // static affinity_partitioner ap;
-  parallel_reduce(blocked_range<size_t>(0, size, grain), sf); //, ap);
-  sum = sf.my_sum;
+
+float RepeatableReduce( const float* a, size_t start, size_t end, size_t threshold) {
+   if( end-start<=threshold ) {
+      float sum;
+      sum_impl21(sum, a, start, end);
+      return sum;
+   } else {
+       // Do parallel divide-and-conquer reduction
+       size_t mid = start + (end - start) / 2;
+       float left, right;
+       tbb::parallel_invoke(
+           [&]{left=RepeatableReduce(a, start, mid, threshold);},
+           [&]{right=RepeatableReduce(a, mid, end, threshold);}
+       );
+       return left+right;
+   }
+}
+
+void sum_impl_tbb_2(float &sum, const float *a, size_t start, size_t end, size_t threshold) {
+  sum = RepeatableReduce(a, start, end, threshold);
+}
+
+void sum_impl_tbb(float &sum, const float *a, size_t start, size_t end,
+                  size_t threshold) {
+  if (end - start < threshold) {
+    sum_impl21(sum, a, start, end);
+  } else {
+    SumFoo sf(a);
+    // static affinity_partitioner ap;
+    parallel_reduce(blocked_range<size_t>(start, end, 64), sf); //, ap);
+    sum = sf.my_sum;
+  }
 }
 
 class ReduceSumFoo {
@@ -92,8 +119,7 @@ public:
 void reducesum_impl_tbb(const float *arr, float *outarr, size_t size1b,
                         size_t size1e, size_t size2b, size_t size2e,
                         size_t size2, size_t num_thread) {
-  tbb::task_scheduler_init init(num_thread);
-//  tbb::task_scheduler_init init(1);
+  (void)num_thread;
   ReduceSumFoo sf(arr, size2);
   // static affinity_partitioner ap;
   // parallel_reduce(blocked_range2d<size_t>(0, size1, grain, 0, size2,
