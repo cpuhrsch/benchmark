@@ -27,7 +27,8 @@ DEFINE_bool(list_run_reducesums, false, "list avail reducesum algorithms");
 // times
 
 // TODO: Run benchmark multiple times and average (mean + stdev) and run it longer
-// TODO: Use taskset
+// TODO: Use taskset to deal with NUMA
+// TODO: 1 vs 2 threads on a single core?
 
 // TODO: Play with TBB to have repeated runs give same results - same order for
 // merges no matter the num of threads - test of conditional numerical reproducibility
