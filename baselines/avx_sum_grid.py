@@ -10,7 +10,8 @@ GRID_sizes = [
 
 GRID_thresholds = [4096, 16384, 65536, 1048576, 4194304]
 
-GRID_functions = ["-run_sum_tbb sum_impl_tbb_2", "-run_sum_tbb sum_impl_tbb", "-run_sum sum_impl21"]
+# GRID_functions = ["-run_sum_tbb sum_impl_tbb_2", "-run_sum_tbb sum_impl_tbb", "-run_sum sum_impl21"]
+GRID_functions = ["-run_sum_tbb sum_impl_tbb_3"]
 
 
 if __name__ == "__main__":

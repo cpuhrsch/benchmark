@@ -76,14 +76,17 @@ void sum_test(float all_sum, const float *data, size_t size, size_t counts,
     assert(counts == 1);
     float sum1;
     sum_impl_naive(sum1, data, 0, size);
-    if (sum1 != all_sum) {
+    float ratio = std::abs(sum1 - all_sum) / sum1;
+    if (ratio > 1e-3) {
       std::cout << "\033[31msum test failed!\033[0m + ";
       std::cout << "ref sum: \033[31m" << sum1;
       std::cout << "\033[0m impl sum: \033[31m" << all_sum << "\033[0m + ";
-      // for (size_t i = 0; i < size2; i++) {
-      //   std::cout << "a: " << outarr1[i] << "b: " << outarr[i] << std::endl;
-      // }
+      std::cout << "\033[0m diff: \033[31m" << ratio << "\033[0m + ";
     } else {
+      // for (size_t i = 0; i < size2; i++) {
+      //   std::cout << "a: " << outarr1[i] << "b: " << outarr[i] <<
+      //   std::endl;
+      // }
       std::cout << "\033[37msum test succeeded!\033[0m + ";
     }
   }

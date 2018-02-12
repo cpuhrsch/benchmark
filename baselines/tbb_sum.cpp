@@ -46,6 +46,40 @@ float RepeatableReduce( const float* a, size_t start, size_t end, size_t thresho
    }
 }
 
+void sum_impl_tbb_3(float &sum, const float *a, size_t start, size_t end,
+                    size_t threshold, size_t max_num_thread) {
+  (void)max_num_thread;
+  if (threshold > (end - start)) threshold = (end - start);
+//  if ((end - start) % threshold != 0) {
+//    std::cerr << "end: " << end << " start: " << start << std::endl;
+//  }
+//   std::cerr <<
+//       "(end - start) / threshold " << (end - start) / threshold << std::endl;
+  float *result = (float *)malloc(sizeof(float) * (end - start) / threshold);
+  for (size_t i = 0; i < (end - start) / threshold; i++) {
+    result[i] = 0;
+  }
+  tbb::parallel_for(blocked_range<size_t>(start, end, threshold),
+                    [=](const blocked_range<size_t> &r) {
+                    //if(r.end() - r.begin() != threshold){ 
+//    std::cerr << "end: " << end << " start: " << start << std::endl;
+//    std::cerr << "threshold: " << threshold << std::endl;
+//   std::cerr <<
+//       "(end - start) / threshold " << (end - start) / threshold << std::endl;
+//       }
+                      result[r.begin() / threshold] = 0;
+//                      std::cerr << "r.begin() " << r.begin() <<
+//
+//                          " r.end() " << r.end() << std::endl;
+                      for (size_t i = r.begin(); i != r.end(); ++i)
+                        result[r.begin() / threshold] += a[i];
+                    });
+  for (size_t i = 0; i < (end - start) / threshold; i++) {
+//    std::cerr << "result[" << i << "] " << result[i] << std::endl;
+    sum += result[i];
+  }
+}
+
 void sum_impl_tbb_2(float &sum, const float *a, size_t start, size_t end, size_t threshold, size_t max_num_thread) {
   (void) max_num_thread;
   sum = RepeatableReduce(a, start, end, threshold);
@@ -137,5 +171,6 @@ register_sum_impls_tbb() {
       impls;
   impls["sum_impl_tbb"] = &sum_impl_tbb;
   impls["sum_impl_tbb_2"] = &sum_impl_tbb_2;
+  impls["sum_impl_tbb_3"] = &sum_impl_tbb_3;
   return impls;
 }
