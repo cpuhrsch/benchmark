@@ -8,11 +8,11 @@ GRID_sizes = [
     (128, 128),(256, 256),(128, 512),(512, 128),(1024, 1024),(2048, 2048),(4096, 4096),(512, 4096),(4096, 512)
 ]
 
-GRID_thresholds = [65536]
+GRID_thresholds = [16384, 32768, 65536]
 GRID_numa = ["echo -n \"(numa:\t1),\"; taskset -c 0-19,40-59 ", "echo -n \"(numa:\t0),\";"]
 
 # GRID_functions = ["-run_sum_tbb sum_impl_tbb_2", "-run_sum_tbb sum_impl_tbb", "-run_sum sum_impl21"]
-GRID_functions = ["-run_sum_tbb sum_impl_tbb"]
+GRID_functions = ["-run_sum_tbb sum_impl_tbb_ap", "-run_sum_tbb sum_impl_tbb"]
 
 
 if __name__ == "__main__":

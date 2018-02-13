@@ -90,6 +90,19 @@ void sum_impl_tbb_2(float &sum, const float *a, size_t start, size_t end, size_t
   sum = RepeatableReduce(a, start, end, threshold);
 }
 
+void sum_impl_tbb_ap(float &sum, const float *a, size_t start, size_t end,
+                  size_t threshold, size_t max_num_thread) {
+  (void) max_num_thread;
+  if (end - start < threshold) {
+    sum_impl21(sum, a, start, end);
+  } else {
+    SumFoo sf(a);
+    static affinity_partitioner ap;
+    parallel_reduce(blocked_range<size_t>(start, end, threshold), sf, ap);
+    sum = sf.my_sum;
+  }
+}
+
 void sum_impl_tbb(float &sum, const float *a, size_t start, size_t end,
                   size_t threshold, size_t max_num_thread) {
   (void) max_num_thread;
@@ -175,6 +188,7 @@ register_sum_impls_tbb() {
            void (*)(float &, const float *, size_t, size_t, size_t, size_t)>
       impls;
   impls["sum_impl_tbb"] = &sum_impl_tbb;
+  impls["sum_impl_tbb_ap"] = &sum_impl_tbb_ap;
   impls["sum_impl_tbb_2"] = &sum_impl_tbb_2;
   impls["sum_impl_tbb_3"] = &sum_impl_tbb_3;
   impls["sum_impl_tbb_4"] = &sum_impl_tbb_4;
