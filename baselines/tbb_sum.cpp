@@ -46,6 +46,53 @@ float RepeatableReduce( const float* a, size_t start, size_t end, size_t thresho
    }
 }
 
+void sum_impl_tbb_omp_naive_simd(float &sum, const float *a, size_t start, size_t end,
+                    size_t threshold, size_t max_num_thread) {
+  (void) max_num_thread;
+  (void) threshold;
+#pragma omp parallel for simd reduction(+:sum)
+  for (size_t i = start; i < end; i++) {
+    sum += a[i];
+  }
+}
+
+void sum_impl_tbb_omp_naive(float &sum, const float *a, size_t start, size_t end,
+                    size_t threshold, size_t max_num_thread) {
+  (void) max_num_thread;
+  (void) threshold;
+#pragma omp parallel for reduction(+:sum)
+  for (size_t i = start; i < end; i++) {
+    sum += a[i];
+  }
+}
+
+void sum_impl_tbb_omp_1(float &sum, const float *a, size_t start, size_t end,
+                    size_t threshold, size_t max_num_thread) {
+  (void) max_num_thread;
+  (void) threshold;
+#pragma omp parallel for reduction(+:sum)
+  for (size_t i = start; i < end; i += 64) {
+    float sum_l = 0;
+    sum_impl21(sum_l, a, i, i + 64);
+    sum += sum_l;
+  }
+}
+
+void sum_impl_tbb_omp(float &sum, const float *a, size_t start, size_t end,
+                      size_t threshold, size_t max_num_thread) {
+  (void)max_num_thread;
+  if (start + threshold > end) {
+    sum_impl21(sum, a, start, end);
+  } else {
+#pragma omp parallel for reduction(+ : sum)
+    for (size_t i = start; i < end; i += threshold) {
+      float sum_l = 0;
+      sum_impl21(sum_l, a, i, i + threshold);
+      sum += sum_l;
+    }
+  }
+}
+
 void sum_impl_tbb_4(float &sum, const float *a, size_t start, size_t end,
                     size_t threshold, size_t max_num_thread) {
   (void)max_num_thread;
@@ -192,5 +239,10 @@ register_sum_impls_tbb() {
   impls["sum_impl_tbb_2"] = &sum_impl_tbb_2;
   impls["sum_impl_tbb_3"] = &sum_impl_tbb_3;
   impls["sum_impl_tbb_4"] = &sum_impl_tbb_4;
+  impls["sum_impl_tbb_ap"] = &sum_impl_tbb_ap;
+  impls["sum_impl_tbb_omp"] = &sum_impl_tbb_omp;
+  impls["sum_impl_tbb_omp_1"] = &sum_impl_tbb_omp_1;
+  impls["sum_impl_tbb_omp_naive"] = &sum_impl_tbb_omp_naive;
+  impls["sum_impl_tbb_omp_naive_simd"] = &sum_impl_tbb_omp_naive_simd;
   return impls;
 }

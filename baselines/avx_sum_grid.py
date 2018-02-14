@@ -9,10 +9,14 @@ GRID_sizes = [
 ]
 
 GRID_thresholds = [16384, 32768, 65536]
-GRID_numa = ["echo -n \"(numa:\t1),\"; taskset -c 0-19,40-59 ", "echo -n \"(numa:\t0),\";"]
+GRID_numa = ["echo -n \"(numa:\t1),\"; %s taskset -c 0-19,40-59 ", "echo -n \"(numa:\t0),\"; %s"]
+GRID_num_thread = [1, 2, 4, 8, 16, 32]
 
 # GRID_functions = ["-run_sum_tbb sum_impl_tbb_2", "-run_sum_tbb sum_impl_tbb", "-run_sum sum_impl21"]
-GRID_functions = ["-run_sum_tbb sum_impl_tbb_ap", "-run_sum_tbb sum_impl_tbb"]
+GRID_functions = ["-run_sum_tbb sum_impl_tbb_ap", "-run_sum_tbb sum_impl_tbb_omp",
+                  "-run_sum_tbb sum_impl_tbb_omp_1", "-run_sum_tbb sum_impl_tbb_omp_naive",
+                  "-run_sum_tbb sum_impl_tbb_omp_naive_simd"]
+
 
 
 if __name__ == "__main__":
@@ -22,8 +26,8 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     grid = []
-    for (numa, (size1, size2), threshold, function) in list(itertools.product(GRID_numa, GRID_sizes, GRID_thresholds, GRID_functions)):
-        grid.append(numa + args.cmd + " -size1 " + str(size1) + " -size2 " + str(size2) + " -epoch -1 " + function + " -threshold " + str(threshold))
+    for (numa, (size1, size2), threshold, function, num_thread) in list(itertools.product(GRID_numa, GRID_sizes, GRID_thresholds, GRID_functions, GRID_num_thread)):
+        grid.append(numa %( " OMP_NUM_THREADS=" + str(num_thread) ) + " " + args.cmd + " -size1 " + str(size1) + " -size2 " + str(size2) + " -epoch -1 " + function + " -threshold " + str(threshold) + " -num_thread " + str(num_thread))
     for g in grid:
         for _ in range(args.repeat):
             print(g)
