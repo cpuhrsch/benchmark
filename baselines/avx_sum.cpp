@@ -187,7 +187,10 @@ void sum_impl21(float &sum, const float *arr, size_t start, size_t end) {
   part_sum = _mm256_set1_ps(0);
   k = start;
   if (end % 64 != 0) {
-    std::cout << "end: " << end << std::endl;
+    if (start == 0) {
+      std::cout << "end: " << end << std::endl;
+      exit(1);
+    }
   }
   for (; k < end; k += 64) {
     for (size_t i = 0; i < 8; i++) {
@@ -206,6 +209,9 @@ void sum_impl21(float &sum, const float *arr, size_t start, size_t end) {
   for (int i = 1; i < 8; i++) {
     sum += sarr[i];
   }
+//  for (; k < end; k++) {
+//    sum += arr[k];
+//  }
 }
 
 void sum_impl21_fma(float &sum, const float *arr, size_t start, size_t end) {

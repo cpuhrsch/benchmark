@@ -7,6 +7,7 @@ DEFINE_int64(size2, 1024, "size2 of matrix");
 DEFINE_int64(num_thread, 0, "number of threads (if applicable)");
 DEFINE_int64(threshold, 0, "parallelization threshold (if applicable)");
 DEFINE_int64(epoch, 1, "number of runs with cache");
+DEFINE_int64(sub_size, 1, "divide size sub_size times recursively");
 DEFINE_bool(test, false, "Show Debug matrix");
 DEFINE_string(run_sum, "", "run given sum algorithm");
 DEFINE_string(run_reducesum, "", "run given sumreduce algorithm");
@@ -108,12 +109,21 @@ sum_tbb_run(void (*fun)(float &, const float *, size_t, size_t, size_t, size_t),
         mycacheflush(data);
       // sum_impl_tbb(sum, datum, 0, size, FLAGS_threshold);
       //      sum_impl_tbb_2(sum, datum, 0, size, FLAGS_threshold);
-      fun(sum, datum, 0, size, FLAGS_threshold, -1);
-      all_sum += sum;
+
+      size_t range = 1;
+      for (size_t step = 0; step < (size_t)FLAGS_sub_size; step++) {
+        for (size_t div = 0; div < range; div++) {
+          sum = 0;
+          fun(sum, datum, div * (size / range), (div + 1) * (size / range),
+              FLAGS_threshold, FLAGS_num_thread);
+          all_sum += sum;
+        }
+        range = range * 2;
+      }
     }
   }
   auto end = get_time();
-  sum_test(all_sum, data, size, counts, epoch);
+  sum_test(all_sum / (float)FLAGS_sub_size, data, size, counts, epoch);
   return timespec_subtract_to_ns(&start, &end);
 }
 
@@ -130,12 +140,20 @@ uint64_t sum_run(void (*fun)(float &, const float *, size_t, size_t),
       float sum;
       if (FLAGS_flush_cache)
         mycacheflush(data);
-      fun(sum, datum, 0, size);
-      all_sum += sum;
+
+      size_t range = 1;
+      for (size_t step = 0; step < (size_t)FLAGS_sub_size; step++) {
+        for (size_t div = 0; div < range; div++) {
+          sum = 0;
+          fun(sum, datum, div * (size / range), (div + 1) * (size / range));
+          all_sum += sum;
+        }
+        range = range * 2;
+      }
     }
   }
   auto end = get_time();
-  sum_test(all_sum, data, size, counts, epoch);
+  sum_test(all_sum / (float)FLAGS_sub_size, data, size, counts, epoch);
   return timespec_subtract_to_ns(&start, &end);
 }
 
@@ -223,7 +241,8 @@ void print_settings(size_t size1, size_t size2, size_t counts, size_t epoch) {
             << "(size2:" << std::setw(8) << size2 << "),"
             << "(size2*size1:" << std::setw(8) << size1 * size2 << "),"
             << "(counts:" << std::setw(8) << counts << "),"
-            << "(epoch:" << std::setw(8) << epoch << "),";
+            << "(epoch:" << std::setw(8) << epoch << "),"
+            << "(sub_size:" << std::setw(8) << FLAGS_sub_size << "),";
   if (FLAGS_num_thread > 0) {
     std::cout << "(num_thread:" << std::setw(8) << FLAGS_num_thread << "),";
   }

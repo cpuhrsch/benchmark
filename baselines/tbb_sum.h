@@ -1,6 +1,9 @@
 #pragma once
 
+#include <map>
 #include "avx_sum.h"
+#include "tbb/task_arena.h"
+#include "tbb/partitioner.h"
 #include "tbb/blocked_range.h"
 #include "tbb/parallel_reduce.h"
 #include "tbb/task_scheduler_init.h"
