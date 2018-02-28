@@ -8,9 +8,7 @@ from torch.autograd import Variable
 import argparse
 
 
-#TODO: Compare to CUDA
-#Compare with master
-#Double check dispatch etc.
+#Note! Numpy accumulates into double
 
 def generate_sizes(size, dims):
     sizes = []
@@ -24,13 +22,9 @@ def generate_sizes(size, dims):
         if rs <= 0:
             rs = 1
         sizes.append(rs)
-
     return sizes
 
 def run_instance(sizes, dims, runs, test, numpy, dattype, d):
-
-    # sizes = [5, 100]
-
     v = np.random.rand(*sizes).astype(dattype)
     tv = Variable(torch.from_numpy(v).contiguous())
     gc.collect()
@@ -51,25 +45,18 @@ def run_instance(sizes, dims, runs, test, numpy, dattype, d):
             if d is not None:
                 vr = Variable(torch.from_numpy(vr))
                 if vr.nonzero().sum() != 0:
-                    error = ((tvr - vr).abs() / vr).mean()
+                    error = (tvr - vr).abs()
+                    error = error.mean()
                     error = error.item()
                 else:
                     error = 0
             else:
                 error = abs(tvr.item() - vr.item())
             if error > 0:
+                error = error
                 assert(runs == 1)
             else:
                 error = None
-
-                #print("(tvr - vr).abs() / vr")
-                #print((tvr - vr).abs() / vr)
-                #print("tvr")
-                #print(tvr)
-                #print("vr")
-                #print(vr)
-                # import sys
-                # sys.exit(1)
     t_time = time.time() - start
     return t_time, error
 
@@ -96,15 +83,16 @@ def run_settings(enable_numpy, all_settings, dattype):
                 if first_setting:
                     header += ["library"]
                 status += "torch:  "
-            header += [" "*6 + "runs", " sizes" + " " * 15, " "*8 + "time", " " * 4 + "dim"]
+            header += [" "*6 + "runs", " sizes" + " " * 15, " "*4 + "time/run", " " * 4 + "dim"]
             d_str = str(d)
             if d is None:
                 d_str = "all"
-            status += "{:10}  {:20} {:10.2f}ms {:8}".format(runs, str(sizes), ltime * 1000, d_str)
+            status += "{:10}  {:20} {:10.2f}us {:8}".format(runs, str(sizes), ltime * 1e6 / runs, d_str)
             if en:
                 ttime[1] += ltime
                 speedup = ttime[1] / ttime[0]
-                status += "speedup: " + str(speedup)
+                header += ["speedup"]
+                status += str(speedup)
                 all_speedup += speedup
             else:
                 ttime[0] += ltime
