@@ -8,8 +8,6 @@ from torch.autograd import Variable
 import argparse
 
 
-#Note! Numpy accumulates into double
-
 def generate_sizes(size, dims):
     sizes = []
     for d in range(dims):
