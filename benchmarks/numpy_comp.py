@@ -83,8 +83,8 @@ def bench(ops, shapes, no_arg=True, smin_=100, smax_=1000, count_=1000):
             tr_time += time.time() - start
         else:
             raise(ValueError("No implement"))
-        op_times.append((dim, op, np_time, tr_time))
-        print("dim: {}, op: {}, numpy: {} torch: {}".format(*op_times[-1]))
+        op_times.append((dim, op, np_time, tr_time, np_time / tr_time))
+        print("dim: {}, op: {}, numpy: {} torch: {} factor: {}".format(*op_times[-1]))
     return op_times
 
 if __name__ == "__main__":
