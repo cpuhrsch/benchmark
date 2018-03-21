@@ -5,14 +5,16 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('threads', type=int)
+    parser.add_argument('threads', type=int, default=-1)
     parser.add_argument('--decrease', action='store_true')
     args = parser.parse_args()
 
     tv = torch.randn(1000 * 1000 * 10)
-    num_thread = torch.get_num_threads()
     if args.threads > 0:
         torch.set_num_threads(args.threads)
+        num_thread = torch.get_num_threads()
+    else:
+        num_thread = 80
     gc.collect()
     tstart = time.time()
     for i in range(1, 100000):

@@ -1,4 +1,5 @@
 import yaml
+import numpy as np
 
 if __name__ == "__main__":
   all_text = ""
@@ -15,9 +16,8 @@ if __name__ == "__main__":
     if 'arguments' in y and y['arguments'] == query_arguments:
       if 'name' in y and y['name'][-1] == '_':
         if 'types' in y and y['types'] == ['floating_point']:
-          good_decls += [y]
+          if 'backends' in y and y['backends'] == ['CPU', 'CUDA']:
+            good_decls += [y]
 
-  for y in good_decls:
-    print(y)
-#  for l in sorted(good_decls):
-#    print(l)
+  for l in sorted(map(lambda x: x['name'], good_decls)):
+    print(l)
