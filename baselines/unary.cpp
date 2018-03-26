@@ -12,7 +12,7 @@
 #include <gflags/gflags.h>
 
 
-int ceil(float * a, const float*b, size_t numel) {
+inline int ceil(float * a, const float*b, size_t numel) {
     size_t i = 0;
     for (; i + 8 < numel; i+=8) {
         a[i] = std::ceil(b[i]);
@@ -30,7 +30,7 @@ int ceil(float * a, const float*b, size_t numel) {
     return 0;
 }
 
-int ceil_v(float * a, const float*b, size_t numel) {
+inline int ceil_v(float * a, const float*b, size_t numel) {
     size_t i = 0;
     __m256 bv;
     for (; i + 8 < numel; i += 8) {
@@ -60,12 +60,12 @@ void make_float_data(float **data_, size_t size) {
 
 int main() {
     // size_t size = 1024 * 1024 * 1024;
-    size_t size = 1024 * 1024 * 128;
+    size_t size = 1024 * 1024;
     assert(size >= _ALIGNMENT);
     assert(size % _ALIGNMENT == 0);
     // size_t size = 20;
     // size_t counts = 1000 * 5;
-    size_t counts = 1;
+    size_t counts = 5000;
     float * a;
     float * a1;
     float * b;
@@ -73,23 +73,30 @@ int main() {
     make_float_data(&a1, size);
     make_float_data(&b, size);
     for (size_t i = 0; i < size; i++) {
-      b[i] = (float)(i % 1024);// * 0.25;
+      b[i] = (float)(i % 1024) * 0.25;
     }
   auto start = get_time();
     for (size_t i = 0; i < counts; i++) {
-        ceil(a, b, size);
-        // ceil_v(a1, b, size);
-    //  b[i] = a[i];
+         ceil(a, b, size);
     }
   auto end = get_time();
   time_stats(timespec_subtract_to_ns(&start, &end), counts * size);
-    // for (size_t i = 0; i < size; i++) {
-    //         if(a[i] != a1[i]) {
-    //             std::cerr << "a[" << i << "]: " << a[i] << std::endl;
-    //             std::cerr << "a1[" << i << "]: " << a1[i] << std::endl;
-    //             break;
-    //         }
-    // }
+  std::cout << "(ceil)" << std::endl;
+  start = get_time();
+    for (size_t i = 0; i < counts; i++) {
+         ceil_v(a1, b, size);
+    }
+  end = get_time();
+  time_stats(timespec_subtract_to_ns(&start, &end), counts * size);
+  std::cout << "(ceil_v)" << std::endl;
+    for (size_t i = 0; i < size; i++) {
+            if(a[i] != a1[i]) {
+              std::cout << "ERROR!" << std::endl;
+                std::cout << "a[" << i << "]: " << a[i] << std::endl;
+                std::cout << "a1[" << i << "]: " << a1[i] << std::endl;
+                break;
+            }
+    }
     // for (size_t i = 0; i < size; i++) {
     //     std::cout << "a[" << i << "]:\t" << a[i];
     //     std::cout << "\ta1[" << i << "]:\t" << a1[i];

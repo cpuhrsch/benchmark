@@ -3,6 +3,9 @@
 #include <time.h>
 #include <numeric>
 #include <algorithm>
+#include <vector>
+#include <iostream>
+#include <iomanip>
 #include "emmintrin.h"
 
 #define USEC 1000000
