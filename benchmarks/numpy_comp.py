@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import torch
 import numpy as np
 import random
@@ -31,7 +29,7 @@ def find_common(array_pairs, no_arg=True):
                     else:
                         r2 = fun(bt)
                     assert(np.isclose(r1, r2))
-                    match_ops.append(opi)
+                    match_ops.append((opi, opi))
                     match_shapes.append(a.shape)
                 except:
                     # if no_arg:
@@ -63,6 +61,7 @@ def bench(ops, shapes, no_arg=True, smin_=100, smax_=1000, count_=1000):
             return x
     op_times = []
     for (shape, op) in zip(shapes, ops):
+        op, top = op
         dim = float(len(shape))
         smin = norm(smin_)
         smax = norm(smax_)
@@ -75,11 +74,14 @@ def bench(ops, shapes, no_arg=True, smin_=100, smax_=1000, count_=1000):
             gc.collect()
             start = time.time()
             for _ in range(count):
-                r1 = getattr(datum, op)()
+                # r1 = getattr(datum, op)()
+                r1 = np.arctan(datum)
             np_time += time.time() - start
             start = time.time()
             for _ in range(count):
-                r2 = getattr(tdatum, op)()
+                # r2 = getattr(tdatum, top)()
+                r2 = tdatum.sqrt()
+                # print(r2)
             tr_time += time.time() - start
         else:
             raise(ValueError("No implement"))
@@ -90,4 +92,4 @@ def bench(ops, shapes, no_arg=True, smin_=100, smax_=1000, count_=1000):
 if __name__ == "__main__":
     random.seed(42)
     ops, shapes = find_common(gen_array_pairs())
-    bench(ops, shapes, smin_=1000000, smax_=1000000, count_=1000)
+    bench(ops, shapes, smin_=1000000, smax_=1000000, count_=100)
