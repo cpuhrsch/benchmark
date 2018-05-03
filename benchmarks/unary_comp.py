@@ -30,8 +30,8 @@ def make_tensor(size_, dtype, cont, dim, trans):
 
 def run(tv, count, fname, mag, dtype, dim):
     status = ""
-    status += "{:<5}".format(fname)
-    status += " size: 10^{:<3}".format(mag)
+    status += "{:<10}".format(fname)
+    status += " memory: {:<10}".format("O(10^" + str(mag) + ")KB")
     status += " count: {:<6}".format(count)
     status += " size: {:<20}".format(list(tv.size()))
     status += " stride: {:<60}".format(list(map(lambda x: "{:>7}".format(x), list(tv.stride()))))
@@ -43,9 +43,9 @@ def run(tv, count, fname, mag, dtype, dim):
     for i in range(count):
         c = f()
     elapsed = time.time() - tstart
+    status += " type: {:<18}".format(dtype)
+    status += " dim: {:<5}".format(dim)
     status += " elapsed: {:8.4f}".format(elapsed)
-    status += " type: {:<20}".format(dtype)
-    status += " dim: " + str(dim)
     print(status)
     gc.collect()
 
@@ -63,32 +63,54 @@ def run_all(fns, mags, dtypes, conts, dims, transs, goal_size=1000):
                             tv = make_tensor(size_, dtype, cont, dim_, trans)
                             run(tv, counts_, fn, mag, dtype, dim_)
 
+float_types = ['torch.FloatTensor', 'torch.DoubleTensor']
+int_types = ['torch.IntTensor', 'torch.LongTensor', 'torch.ShortTensor']
+
+def sleef_benchmark():
+    float_fns_nonvec = [
+        "cos",
+        "sin",
+        "tan"
+    ]
+    float_fns_nonvec_touched = [
+        "cosh",
+        "sinh",
+        "tanh"
+    ]
+    float_fns_vec_old = [
+        "abs",
+        "ceil",
+        "floor",
+        "round",
+        "sqrt",
+        "trunc"
+    ]
+    float_fns = [
+        "acos",
+        "asin",
+        "atan",
+        "erf",
+        "exp",
+        "expm1",
+        "log",
+        "log10",
+        "log1p",
+        "log2",
+        "rsqrt",
+    ]
+    types = float_types
+    # sleef benchmark
+
+    # Compare contiguous only
+    float_fns = float_fns
+    funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
+    run_all(funcs, [4], types, [True], [3], [False], goal_size=250)
+
+    # # Check for regression
+    # float_fns = float_fns_nonvec_touched
+    # funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
+    # run_all(funcs, [4, 2, 1], types, [True, False], [5, 3], [True, False], goal_size=250)
+
 
 if __name__ == "__main__":
-    onek = 1000
-    # process 1GB * sizeof(type) worth of data
-    goal = onek * 1000 * 1000 * 1
-    # fns = ["acos","asin","atan","cos","cosh","erf","exp","expm1","lgamma","log1p","log","sin","sinh","tan","tanh"]
-    float_fns = ["cos", "sin", "exp", "log"]
-    float_fns += ["ceil", "floor", "round", "trunc", "sqrt"]
-    # run_all(float_fns, range(2, 6), [torch.double, torch.float])
-    float_types = ['torch.FloatTensor', 'torch.DoubleTensor']
-    int_types = ['torch.IntTensor', 'torch.LongTensor', 'torch.ShortTensor']
-    # run_all(["abs"], range(2, 6), float_types + int_types, False)
-    # run_all(["abs"], range(2, 4), float_types + int_types, False)
-    # run_all(["sin"], range(2, 4), float_types, False)
-    # run_all(["sin"], range(2, 4), float_types, False, [3])
-
-    float_fns = ["sin"]
-    types = float_types
-    funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
-    run_all(funcs, [4, 2, 1], types, [True, False], [3, 5], [True, False], goal_size=100)
-
-    # # LATEST BENCHMARK
-    # float_fns = ["sqrt", "sin"]
-    # types = float_types
-    # funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
-    # run_all(funcs, [4, 2, 1], types, [True, False], [3, 5], [True, False], goal_size=100)
-
-    # run_all(["sin"], [2, 2, 2], float_types, False, [3], goal_size=100)
-    # run_all(["sin"], [2], float_types, False, [3], goal_size=1000)
+    sleef_benchmark()
