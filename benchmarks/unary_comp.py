@@ -3,6 +3,7 @@ import time
 import gc
 import argparse
 import math
+from torch import functional as F
 
 def make_size(dim, size_):
     if dim == 1:
@@ -28,14 +29,25 @@ def make_tensor(size_, dtype, cont, dim, trans):
         tv = tv.transpose(dim -2, dim -1)
     return tv
 
-def run(tv, count, fname, mag, dtype, dim):
+def start_stats(fname, mag, count, tv):
     status = ""
-    status += "{:<10}".format(fname)
+    status += "{:<15}".format(fname)
     status += " memory: {:<10}".format("O(10^" + str(mag) + ")KB")
     status += " count: {:<6}".format(count)
     status += " size: {:<20}".format(list(tv.size()))
     status += " stride: {:<60}".format(list(map(lambda x: "{:>7}".format(x), list(tv.stride()))))
     status += " numel: {:<9}".format(tv.numel())
+    return status
+
+def finish_stats(dtype, dim, elapsed):
+    status = ""
+    status += " type: {:<18}".format(dtype)
+    status += " dim: {:<5}".format(dim)
+    status += " elapsed: {:8.4f}".format(elapsed)
+    return status
+
+def run(tv, count, fname, mag, dtype, dim):
+    status = start_stats(fname, mag, count, tv)
     f = getattr(tv, fname)
     gc.collect()
     gc.collect()
@@ -43,10 +55,18 @@ def run(tv, count, fname, mag, dtype, dim):
     for i in range(count):
         c = f()
     elapsed = time.time() - tstart
-    status += " type: {:<18}".format(dtype)
-    status += " dim: {:<5}".format(dim)
-    status += " elapsed: {:8.4f}".format(elapsed)
-    print(status)
+    print(status + finish_stats(dtype, dim, elapsed))
+    gc.collect()
+
+def run_reduce(tv, count, fname, mag, dtype, dim, opdim):
+    status = start_stats(fname, mag, count, tv)
+    gc.collect()
+    gc.collect()
+    tstart = time.time()
+    for i in range(count):
+        c = fname(tv, opdim)
+    elapsed = time.time() - tstart
+    print(status + finish_stats(dtype, dim, elapsed))
     gc.collect()
 
 def run_all(fns, mags, dtypes, conts, dims, transs, goal_size=1000):
@@ -62,6 +82,20 @@ def run_all(fns, mags, dtypes, conts, dims, transs, goal_size=1000):
                             counts_ = goal / size_
                             tv = make_tensor(size_, dtype, cont, dim_, trans)
                             run(tv, counts_, fn, mag, dtype, dim_)
+
+def run_reduce_all(fns, fns_opdims, mags, dtypes, conts, dims, transs, goal_size=1000):
+    onek = 1000
+    goal = onek * 1000 * goal_size
+    for dim_ in dims:
+        for dtype in dtypes:
+            for mag in mags:
+                for ii in range(len(fns)):
+                    for cont in conts:
+                        for trans in transs:
+                            size_ = int(onek * math.pow(10, mag))
+                            counts_ = goal / size_
+                            tv = make_tensor(size_, dtype, cont, dim_, trans)
+                            run_reduce(tv, counts_, fns[ii], mag, dtype, dim_, fns_opdims[ii])
 
 float_types = ['torch.FloatTensor', 'torch.DoubleTensor']
 int_types = ['torch.IntTensor', 'torch.LongTensor', 'torch.ShortTensor']
@@ -103,6 +137,7 @@ def sleef_benchmark():
 
     # Compare contiguous only
     float_fns = float_fns
+    float_fns = ["tanh"]
     funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
     run_all(funcs, [4], types, [True], [3], [False], goal_size=250)
 
@@ -111,6 +146,13 @@ def sleef_benchmark():
     # funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
     # run_all(funcs, [4, 2, 1], types, [True, False], [5, 3], [True, False], goal_size=250)
 
+def softmax_benchmark():
+    types = float_types
+    # Compare contiguous only
+    funcs = [torch.nn.functional.log_softmax, torch.nn.functional.softmax]
+    func_opdims = [2, 2]
+    run_reduce_all(funcs, func_opdims, [4], types, [True], [3], [False], goal_size=250)
 
 if __name__ == "__main__":
     sleef_benchmark()
+    # softmax_nn_benchmark()
