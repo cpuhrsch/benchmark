@@ -3,6 +3,7 @@ import time
 import gc
 import argparse
 import math
+import numpy as np
 from torch import functional as F
 
 def make_size(dim, size_):
@@ -26,11 +27,13 @@ def make_tensor(size_, dtype, cont, dim, trans):
         tv = torch.rand(size).type(dtype)
         tv = tv.select(dim, 0)
     if trans:
-        tv = tv.transpose(dim -2, dim -1)
+        # tv = tv.transpose(dim -2, dim -1)
+        tv = tv.transpose(0, 1)
     return tv
 
-def start_stats(fname, mag, count, tv):
+def start_stats(framework_name, fname, mag, count, tv):
     status = ""
+    status += "{:<15}".format(framework_name)
     status += "{:<15}".format(fname)
     status += " memory: {:<10}".format("O(10^" + str(mag) + ")KB")
     status += " count: {:<6}".format(count)
@@ -135,11 +138,14 @@ def sleef_benchmark():
     types = float_types
     # sleef benchmark
 
-    # Compare contiguous only
-    float_fns = float_fns
-    float_fns = ["tanh"]
+    float_fns = float_fns + float_fns_nonvec + float_fns_nonvec_touched + float_fns_vec_old
+    float_fns = ["acos", "erf", "log", "log10", "log2", "rsqrt", "abs", "sqrt"]
+    float_fns = ["acos", "log", "log10"]
     funcs = list(map(lambda x: x + "_", float_fns)) + float_fns
-    run_all(funcs, [4], types, [True], [3], [False], goal_size=250)
+    # run_all(funcs, [4], types, [True], [3], [False], goal_size=250)
+    # run_all(funcs, [4, 2], [torch.float32], [True, False], [3], [True, False], goal_size=250)
+    run_all(funcs, [4], [torch.float32], [True, False], [3], [True, False], goal_size=250)
+    # run_all(funcs, [4, 2, 1], types, [True, False], [5, 3], [True, False], goal_size=250)
 
     # # Check for regression
     # float_fns = float_fns_nonvec_touched
@@ -153,6 +159,35 @@ def softmax_benchmark():
     func_opdims = [2, 2]
     run_reduce_all(funcs, func_opdims, [4], types, [True], [3], [False], goal_size=250)
 
+def lambda_benchmark(types, fun, name, framework_name, cast):
+    goal_size = 200
+    onek = 1000
+    goal = onek * 1000 * goal_size
+    for cont in [True, False]:
+        for trans in [True, False]:
+            for mag in [4, 5]:
+                for dim in [4]:
+                    for dtype in types:
+                        size_ = int(onek * math.pow(10, mag))
+                        count = goal / size_
+                        tv = make_tensor(size_, dtype, cont, 3, trans)
+                        status = start_stats(framework_name, name, mag, count, tv)
+                        gc.collect()
+                        gc.collect()
+                        tstart = time.time()
+                        for _ in range(count):
+                            fun(tv)
+                        elapsed = time.time() - tstart
+                        print(status + finish_stats(dtype, dim, elapsed))
+                        gc.collect()
+                        gc.collect()
+
 if __name__ == "__main__":
-    sleef_benchmark()
+    # sleef_benchmark()
     # softmax_nn_benchmark()
+    # lambda_benchmark(float_types + int_types, lambda x: x.fill_(1), "fill_")
+    # lambda_benchmark(lambda x: x.clamp_(0, 1), "clamp_")
+    # lambda_benchmark(lambda x: x.clamp(0, 1), "clamp")
+    # lambda_benchmark(float_types, lambda x: x.sigmoid(), "sigmoid")
+    lambda_benchmark(float_types, lambda x: x.floor(), "floor", "torch", lambda x: x)
+    lambda_benchmark(float_types, lambda x: np.floor(x), "floor", "numpy", lambda x: x.numpy())

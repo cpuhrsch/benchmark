@@ -74,13 +74,13 @@ def bench(ops, shapes, no_arg=True, smin_=100, smax_=1000, count_=1000):
             gc.collect()
             start = time.time()
             for _ in range(count):
-                # r1 = getattr(datum, op)()
-                r1 = np.arctan(datum)
+                r1 = getattr(datum, op)()
+                # r1 = np.arctan(datum)
             np_time += time.time() - start
             start = time.time()
             for _ in range(count):
-                # r2 = getattr(tdatum, top)()
-                r2 = tdatum.sqrt()
+                r2 = getattr(tdatum, top)()
+                # r2 = tdatum.sqrt()
                 # print(r2)
             tr_time += time.time() - start
         else:

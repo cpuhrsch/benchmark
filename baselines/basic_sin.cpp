@@ -1,24 +1,24 @@
-#include <chrono>
-#include <iostream>
 #include <cmath>
 #include <vector>
 #include <x86intrin.h>
+#include <iostream>
 
+#if defined(__AVX__) && defined(__GLIBC__) && __GLIBC_MINOR__ == 23
+// #define ZEROUPPER
+#define ZEROUPPER _mm256_zeroupper();
+#else
+#define ZEROUPPER
+#endif
 
 int main() {
   std::vector<float> v(128 * 128 * 128, 1);
   std::vector<float> a(128 * 128 * 128, 0);
   for (size_t counts = 0; counts < 10; counts++) {
-    auto t11 = std::chrono::high_resolution_clock::now();
+    ZEROUPPER
+    volatile float x = 1;
+    x = sinf(x);
     for (size_t i = 0; i < v.size(); i++) {
-
-#ifdef __AVX__
-      _mm256_zeroupper();
-#endif
-      a[i] = sinf(v[i]);// + a[i];
+      a[i] = sinf(v[i]); // + a[i];
     }
-    auto t21 = std::chrono::high_resolution_clock::now();
-    std::cout << "asdf: " << std::chrono::duration_cast<std::chrono::microseconds>(t21 - t11).count() << " a[0]: " << a[0] << std::endl;
   }
 }
-
