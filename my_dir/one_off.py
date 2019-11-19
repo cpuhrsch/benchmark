@@ -2,6 +2,7 @@ import torch
 import argparse
 import gc
 import time
+import sys
 
 # Notes
 # Why isn't batch-size first?
@@ -12,22 +13,29 @@ import time
 # Why is nn.MultiHeadAttention using Linear for bias and weight instead of what it does for in_proj_weight
 
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+
 def run_bench(*args, **kwargs):
     mha = gen_run_one_bench(*args, **kwargs)
-    for _ in range(3):  # Warmup
-        mha()
-    times = []
-    for _ in range(20):  # Collect data
-        gc.collect()
-        gc.collect()
+    all_time = 0.0
+    while(all_time < 1.0):  # Warmup for 1s
         ti = time.time()
         mha()
-        times.append(time.time() - ti)
-        gc.collect()
-        gc.collect()
+        all_time += time.time() - ti
+    times = []
+    all_time = 0.0
+    while(all_time < 2.0):  # Run for 2s
+        # gc.collect() TODO: Test for additional stability
+        ti = time.time()
+        mha()
+        ti = time.time() - ti
+        times.append(ti)
+        all_time += ti
     times = torch.tensor(times)
     times = times * 1e6
-    return int(times.mean().item()), int(times.std().item())
+    return int(times.mean().item()), int(times.std().item()), len(times)
 
 
 def gen_run_one_bench(L, N, embed_dim, num_heads, use_separate_proj_weight, qkv_same, kv_same, device):
@@ -73,12 +81,18 @@ def gen_run_one_bench(L, N, embed_dim, num_heads, use_separate_proj_weight, qkv_
     return run_mha
 
 
-basic_configs = [
-    (16, 1, 256, 16),
-    (16, 4, 256, 16),
-    (16, 8, 256, 16),
-    (16, 16, 256, 16),
-]
+def tuple_prod(tup):
+    r = 1
+    for t in tup:
+        r *= t
+    return float(r)
+
+basic_configs = []
+for L in [16, 32]:
+    for N in [1, 64, 256]:
+        for embed_dim in [16, 256, 1024]:
+            for num_heads in [1, 8, 16]:
+                basic_configs.append((L, N, embed_dim, num_heads))
 extra_configs = [
     (True, True, False, 'cpu'),
     (True, False, True, 'cpu'),
@@ -99,8 +113,11 @@ if __name__ == "__main__":
     parser.add_argument('numthreads')
     args = parser.parse_args()
     torch.set_num_threads(int(args.numthreads))
-    print(",".join(keys + ["avg(us)", "std(us)"]))
+    eprint("Running {} experiments".format(len(basic_configs) * len(extra_configs)))
+    print(",".join(keys + ["avg(us)", "std(us)", "num_runs", "data/avg(us)"]))
     for extra_config in extra_configs:
         for basic_config in basic_configs:
             config = basic_config + extra_config
-            print(",".join(map(str, config + run_bench(*config))))
+            avg_time, std_time, num_runs = run_bench(*config)
+            dp_per_time = int(tuple_prod(basic_config) / avg_time)
+            print(",".join(map(str, config + (avg_time, std_time, num_runs, dp_per_time))))
