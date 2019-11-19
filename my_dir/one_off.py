@@ -121,3 +121,4 @@ if __name__ == "__main__":
             avg_time, std_time, num_runs = run_bench(*config)
             dp_per_time = int(tuple_prod(basic_config) / avg_time)
             print(",".join(map(str, config + (avg_time, std_time, num_runs, dp_per_time))))
+            sys.stdout.flush()

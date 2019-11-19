@@ -1,0 +1,6 @@
+cset: --> last message, executed args into cpuset "/user", new pid is: 75972
+L,N,embed_dim,num_heads,use_separate_proj_weight,qkv_same,kv_same,device,avg(us),std(us),num_runs,data/avg(us)
+16,1,16,1,True,True,False,cpu,323,7,6178,0
+16,1,16,8,True,True,False,cpu,370,6,5397,5
+16,1,16,16,True,True,False,cpu,405,7,4935,10
+16,1,256,1,True,True,False,cpu,751,240,2661,5
