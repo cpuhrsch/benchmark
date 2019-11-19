@@ -1,4 +1,5 @@
 import torch
+import argparse
 import gc
 import time
 
@@ -48,13 +49,14 @@ def gen_run_one_bench(L, N, embed_dim, num_heads, use_separate_proj_weight, qkv_
     bias_v = None
     add_zero_attn = False
     dropout = 0.5
-    training=True
+    training = True
     key_padding_mask = None
     need_weights = False
     attn_mask = None
     q_proj_weight = my_rand(embed_dim, embed_dim)
     k_proj_weight = my_rand(embed_dim, embed_dim)
     v_proj_weight = my_rand(embed_dim, embed_dim)
+
     def run_mha():
         torch.nn.functional.multi_head_attention_forward(
             query, key, value, embed_dim, num_heads,
@@ -71,21 +73,34 @@ def gen_run_one_bench(L, N, embed_dim, num_heads, use_separate_proj_weight, qkv_
     return run_mha
 
 
-keys = ["L", "N", "embed_dim", "num_heads", "use_separate_proj_weight", "qkv_same", "kv_same", "device"]
-configs = [
-    (4, 40, 256, 16, True, True, False,'cpu'),
-    (4, 40, 256, 16, True, False, True,'cpu'),
-    (4, 40, 256, 16, True, False, False,'cpu'),
-    (4, 40, 256, 16, False, True, False,'cpu'),
-    (4, 40, 256, 16, False, False, True,'cpu'),
-    (4, 40, 256, 16, False, False, False,'cpu'),
-    (4, 40, 256, 16, True, True, False,'cuda'),
-    (4, 40, 256, 16, True, False, True,'cuda'),
-    (4, 40, 256, 16, True, False, False,'cuda'),
-    (4, 40, 256, 16, False, True, False,'cuda'),
-    (4, 40, 256, 16, False, False, True,'cuda'),
-    (4, 40, 256, 16, False, False, False,'cuda'),
+basic_configs = [
+    (16, 1, 256, 16),
+    (16, 4, 256, 16),
+    (16, 8, 256, 16),
+    (16, 16, 256, 16),
 ]
-print(",".join(keys + ["avg(us)", "std(us)"]))
-for config in configs:
-    print(",".join(map(str, config + run_bench(*config))))
+extra_configs = [
+    (True, True, False, 'cpu'),
+    (True, False, True, 'cpu'),
+    (True, False, False, 'cpu'),
+    (False, True, False, 'cpu'),
+    (False, False, True, 'cpu'),
+    (False, False, False, 'cpu'),
+    (True, True, False, 'cuda'),
+    (True, False, True, 'cuda'),
+    (True, False, False, 'cuda'),
+    (False, True, False, 'cuda'),
+    (False, False, True, 'cuda'),
+    (False, False, False, 'cuda'),
+]
+keys = ["L", "N", "embed_dim", "num_heads", "use_separate_proj_weight", "qkv_same", "kv_same", "device"]
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('numthreads')
+    args = parser.parse_args()
+    torch.set_num_threads(int(args.numthreads))
+    print(",".join(keys + ["avg(us)", "std(us)"]))
+    for extra_config in extra_configs:
+        for basic_config in basic_configs:
+            config = basic_config + extra_config
+            print(",".join(map(str, config + run_bench(*config))))
