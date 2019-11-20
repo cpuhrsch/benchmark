@@ -9,8 +9,7 @@ import sys
 # Add docs that documents the shape in_proj_weight needs to be
 # Indexing ops are expensive
 # How can bias k and bias v be optional before a positional argument?
-# Why is nn.MultiHeadAttention using Linear for bias and weight instead of what it does for in_proj_weight
-
+# Why is nn.MultiHeadAttention using Linear for bias and weight instead of what it does for in_proj_weight 
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -25,7 +24,7 @@ def run_bench(*args, **kwargs):
         all_time += time.time() - ti
     times = []
     all_time = 0.0
-    while(all_time < 2.0):  # Run for 2s
+    while(all_time < 3.0):  # Run for 3s
         # gc.collect() TODO: Test for additional stability
         ti = time.time()
         mha()
@@ -33,13 +32,19 @@ def run_bench(*args, **kwargs):
         times.append(ti)
         all_time += ti
     times = torch.tensor(times)
-    times = times * 1e6
-    return int(times.mean().item()), int(times.std().item()), len(times)
+    times_mean = int(times.mean().item() * 1e6)
+    try:
+        times_std = int(times.std().item() * 1e6)
+    except ValueError:
+        times_std = 0.0
+        eprint(times.std())
+    return times_mean, times_std, len(times)
+    # return int(times.mean().item()), int(times.std().item()), len(times)
 
 
 def gen_run_one_bench(L, N, embed_dim, num_heads, use_separate_proj_weight, qkv_same, kv_same, device):
     def my_rand(*args):
-        return torch.randn(*args, device=device)
+        return torch.rand(*args, device=device)
     query = my_rand(L, N, embed_dim)
     key = my_rand(L, N, embed_dim)
     value = my_rand(L, N, embed_dim)
@@ -87,10 +92,10 @@ def tuple_prod(tup):
     return float(r)
 
 basic_configs = []
-for L in [16, 32]:
-    for N in [1, 64, 256]:
-        for embed_dim in [16, 256, 1024]:
-            for num_heads in [1, 8, 16]:
+for L in [32, 64, 128]:
+    for N in [256, 512]:
+        for embed_dim in [1024, 2048]:
+            for num_heads in [16, 64]:
                 basic_configs.append((L, N, embed_dim, num_heads))
 extra_configs = [
     (True, True, False, 'cpu'),
@@ -99,12 +104,12 @@ extra_configs = [
     (False, True, False, 'cpu'),
     (False, False, True, 'cpu'),
     (False, False, False, 'cpu'),
-    (True, True, False, 'cuda'),
-    (True, False, True, 'cuda'),
-    (True, False, False, 'cuda'),
-    (False, True, False, 'cuda'),
-    (False, False, True, 'cuda'),
-    (False, False, False, 'cuda'),
+    # (True, True, False, 'cuda'),
+    # (True, False, True, 'cuda'),
+    # (True, False, False, 'cuda'),
+    # (False, True, False, 'cuda'),
+    # (False, False, True, 'cuda'),
+    # (False, False, False, 'cuda'),
 ]
 keys = ["L", "N", "embed_dim", "num_heads", "use_separate_proj_weight", "qkv_same", "kv_same", "device"]
 if __name__ == "__main__":
