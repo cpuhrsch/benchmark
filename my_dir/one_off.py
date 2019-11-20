@@ -1,5 +1,4 @@
 import torch
-import argparse
 import gc
 import time
 import sys
@@ -109,10 +108,6 @@ extra_configs = [
 ]
 keys = ["L", "N", "embed_dim", "num_heads", "use_separate_proj_weight", "qkv_same", "kv_same", "device"]
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('numthreads')
-    args = parser.parse_args()
-    torch.set_num_threads(int(args.numthreads))
     eprint("Running {} experiments".format(len(basic_configs) * len(extra_configs)))
     print(",".join(keys + ["avg(us)", "std(us)", "num_runs", "data/avg(us)"]))
     for extra_config in extra_configs:
